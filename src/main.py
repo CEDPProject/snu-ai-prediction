@@ -25,15 +25,16 @@ from accelerate.utils import set_seed
 _logger = get_logger('train')
 
 def main(cfg):
-
+    
     # set logger
-    setup_default_logging()
+    logger = setup_default_logging()
+
     # set seed
     set_seed(cfg.DEFAULT.seed)
     
     # set accelrator
     accelerator = Accelerator()
-    
+
     # make save directory
     savedir = os.path.join(cfg.RESULT.savedir, cfg.MODEL.modelname, cfg.DEFAULT.exp_name)
     loaddir, savedir = version_build(accelerator = accelerator,
