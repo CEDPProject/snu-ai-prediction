@@ -45,7 +45,7 @@ def main(cfg):
     logger.info('Device: {}'.format(accelerator.device), main_process_only=False)
     
     # load and define dataloader
-    information_dict, trn_dataloader, val_dataloader, tst_dataloader = LG_create_dataloader(
+    info_dict, trn_dataloader, val_dataloader, tst_dataloader = LG_create_dataloader(
                                     datadir                  = cfg.DATASET.datadir,
                                     train_only               = cfg.DATASET.train_only, 
                                     scale                    = cfg.DATASET.scale,
