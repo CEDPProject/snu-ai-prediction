@@ -44,6 +44,8 @@ def load_dataset(
     # 동일 CRTN_TM, FCST_TM 필터링
     ecmwf_fcst, um_fcst, wrf_fcst, common_times = align_times(ecmwf_fcst, um_fcst, wrf_fcst)
     
+    if structure == 'independence':
+        
     
     
     # 데이터 전처리
