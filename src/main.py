@@ -14,8 +14,7 @@ from losses import create_criterion
 from optimizers import create_optimizer
 from models import create_model
 from utils.log import setup_default_logging
-from utils.utils import make_save, version_build, load_resume_model, Float32Encoder
-from utils.tool import update_information
+from utils.utils import version_build
 from arguments import parser
 
 from accelerate import Accelerator
@@ -42,7 +41,7 @@ def main(cfg):
                                     resume = cfg.TRAIN.resume)
     
     # set device
-    logger.info('Device: {}'.format(accelerator.device), main_process_only=False)
+    accelerator.print('Device: {}'.format(accelerator.device), main_process_only=False)
     
     # load and define dataloader
     info_dict, trn_dataloader, val_dataloader, tst_dataloader = LG_create_dataloader(
