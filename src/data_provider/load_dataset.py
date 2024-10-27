@@ -147,9 +147,6 @@ def load_dataset(
                                     columns=val_tsa.columns,
                                     index=val_tsa.index)
         
-        tst_tsa = pd.DataFrame(tst_scaling_tsa,
-                                    columns=tst_tsa.columns,
-                                    index=tst_tsa.index)
         
         print(f'{scale} Normalization done')
     
