@@ -1,49 +1,62 @@
 import torch
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from data_provider.load_dataset import load_dataset
-from data_provider.build_dataset import LG_BuildDataset
+from data_provider.build_dataset import WeatherPredictionDataset
 from omegaconf import OmegaConf
 import warnings
 import pdb
 
 warnings.filterwarnings('ignore')
 
-def LG_create_dataloader(
+def create_dataloader(
                 datadir: str,
-                train_only: bool, 
-                train_test_predefined: bool,
                 scale: str,
                 batch_size: int,
                 shuffle: bool,
                 num_workers: int,
                 pin_memory: bool,
-                drop_last: bool,
                 pre_training: bool,
-                data_num: int,
-                split_rate: list = [0.7, 0.1, 0.2]
+                drop_last: bool,
+                category_name: str,
+                input_structure: str,
+                data_version: str,
+                lead_time_align: bool = False,
+                split_rate: list = [0.7, 0.1, 0.2],
+                align_time: bool = True,
                 ):
 
     assert scale in (None, 'minmax', 'minmax_square', 'standard')
-    assert category_name in ('solar', 'windw')
-    assert structure in ('independence', 'merge')
+    assert category_name in ('solar', 'wind')
+    assert input_structure in ('independence', 'merge')
 
-    information_dict, trn_list, val_list, tst_list = load_dataset(
-                                                        datadir                = datadir,
-                                                        train_only             = train_only,
-                                                        train_test_predefined  = train_test_predefined,
-                                                        scale                  = scale,
-                                                        pre_training           = pre_training,
-                                                        data_num               = data_num,
-                                                        split_rate             = split_rate
-                                                        )
-
-    # build dataset
-    trn_dataset = LG_BuildDataset(data_list = trn_list)
-    val_dataset = LG_BuildDataset(data_list = val_list)
-    tst_dataset = LG_BuildDataset(data_list = tst_list)
+    data_dict, ground_truth = load_dataset(
+                        datadir                = datadir,
+                        category_name          = category_name,
+                        scale                  = scale,
+                        input_structure        = input_structure,
+                        pre_training           = pre_training,
+                        lead_time_align        = lead_time_align,
+                        del_feature            = ['SWDDIR'],
+                        data_version           = data_version,
+                        split_rate             = split_rate,
+                        align_time             = align_time,
+                        )
     
-    # Randomness adjust
-    g = seed_worker_2()
+    trn_dataset = WeatherPredictionDataset(data_dict        = data_dict,
+                                            ground_truth    = ground_truth,
+                                            category_name   = category_name,
+                                            input_structure = input_structure,
+                                            type            = 'train')
+    val_dataset = WeatherPredictionDataset(data_dict        = data_dict,
+                                            ground_truth    = ground_truth,
+                                            category_name   = category_name,
+                                            input_structure = input_structure,
+                                            type            = 'val')
+    tst_dataset = WeatherPredictionDataset(data_dict        = data_dict,
+                                            ground_truth    = ground_truth,
+                                            category_name   = category_name,
+                                            input_structure = input_structure,
+                                            type            = 'test')
     
     # torch dataloader
     trn_dataloader = torch.utils.data.DataLoader(trn_dataset,
@@ -51,8 +64,6 @@ def LG_create_dataloader(
                                                 shuffle        =  shuffle,
                                                 num_workers    =  num_workers,
                                                 pin_memory     =  pin_memory,
-                                                worker_init_fn =  seed_worker_1,
-                                                generator      =  g,
                                                 drop_last      =  drop_last)
 
     val_dataloader = torch.utils.data.DataLoader(val_dataset,
@@ -60,8 +71,6 @@ def LG_create_dataloader(
                                                 shuffle        =  shuffle,
                                                 num_workers    =  num_workers,
                                                 pin_memory     =  pin_memory,
-                                                worker_init_fn =  seed_worker_1,
-                                                generator      =  g,
                                                 drop_last      =  drop_last)
 
     tst_dataloader = torch.utils.data.DataLoader(tst_dataset,
@@ -69,18 +78,8 @@ def LG_create_dataloader(
                                                 shuffle        =  False,
                                                 num_workers    =  num_workers,
                                                 pin_memory     =  pin_memory,
-                                                worker_init_fn =  seed_worker_1,
-                                                generator      =  g,
                                                 drop_last      =  False)
-
-    # information dict update
-    information_dict.update({'tsa_n_series': next(iter(trn_dataset))['inputs']['tsa'].size(-1)})
-    information_dict.update({'tsb_n_series': next(iter(trn_dataset))['inputs']['tsb'].size(-1)})
-
-    information_dict.update({'tsa_n_step': next(iter(trn_dataset))['inputs']['tsa'].size(0)})
-    information_dict.update({'tsb_n_step': next(iter(trn_dataset))['inputs']['tsb'].size(0)})
     
-    information_dict.update({'target_num': next(iter(trn_dataloader))['targets'].size(-1)})
-
+    features = trn_dataset.datasets['ECMWF'][0]['inputs'].columns
     
-    return information_dict, trn_dataloader, val_dataloader, tst_dataloader
+    return trn_dataloader, val_dataloader, tst_dataloader, features

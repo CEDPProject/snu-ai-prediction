@@ -11,63 +11,76 @@ from collections import Counter
 warnings.filterwarnings('ignore')
 
 def load_dataset(
-                category_name: str,
                 datadir: str,
+                category_name: str,                
                 scale: str,
-                structure: str,
-                train_only: bool = False,
+                input_structure: str,
+                data_version: str = 'version2_241107',
+                align_time: bool = True,
                 pre_training: bool = False,
-                data_num: int = 0,
+                lead_time_align: bool = False,
                 del_feature: list = ['SWDDIR'],
                 split_rate: list = [0.8, 0.1, 0.1]):
+    
     # 태양광 발전량
     if category_name == 'solar':
-        location     = pd.read_csv(os.path.join(datadir, "태양광/샘플_태양광발전단지_위치정보.csv"), encoding='cp949')
-        ecmwf_fcst   = pd.read_csv(os.path.join(datadir, "태양광/샘플_태양광발전단지_ECMWF_수치예보데이터.csv"))
-        um_fcst      = pd.read_csv(os.path.join(datadir, "태양광/샘플_태양광발전단지_UM_수치예보데이터.csv"))
-        wrf_fcst     = pd.read_csv(os.path.join(datadir, "태양광/샘플_태양광발전단지_WRF_수치예보데이터.csv"))
-    # 풍력 발전량
-    elif category_name == 'wind':
-        location     = pd.read_csv(os.path.join(datadir, "풍력/샘플_풍력발전단지_호기별_위치정보.csv"), encoding='euc-kr')
-        ecmwf_fcst   = pd.read_csv(os.path.join(datadir, "풍력/샘플_풍력발전단지_ECMWF_수치예보데이터.csv"))
-        um_fcst      = pd.read_csv(os.path.join(datadir, "풍력/샘플_풍력발전단지_UM_수치예보데이터.csv"))
-        wrf_fcst     = pd.read_csv(os.path.join(datadir, "풍력/샘플_풍력발전단지_WRF_수치예보데이터.csv"), low_memory=False, encoding='euc-kr')
-    
-    # 실적 데이터
-    weather_gt = pd.read_csv(os.path.join(datadir, "샘플_풍력발전단지_호기별_위치정보.csv"), encoding='euc-kr')
-    power_gt   = pd.read_csv(os.path.join(datadir, "샘플_풍력발전단지_호기별_위치정보.csv"), encoding='euc-kr')
+        base_path = os.path.join("../../data/ecobrain/", data_version, "태양광발전단지")
+        data_dict = {
+            'weather_forecast': pd.read_csv(os.path.join(base_path, "태양광발전단지_기상관측데이터.csv")),
+            'real_power': pd.read_csv(os.path.join(base_path, "태양광발전단지_실적데이터.csv"), encoding='cp949'),
+            'location': pd.read_csv(os.path.join(base_path, "태양광발전단지_위치정보.csv"), encoding='cp949'),
+            'ECMWF': pd.read_csv(os.path.join(base_path, "태양광발전단지_ECMWF_수치예보데이터.csv")),
+            'LDAPS': pd.read_csv(os.path.join(base_path, "태양광발전단지_LDAPS_수치예보데이터.csv")),
+        }
+
+    if category_name == 'wind':
+        base_path = os.path.join("../../data/ecobrain/", data_version, "풍력발전단지")
+        data_dict = {
+            'weather_forecast': pd.read_csv(os.path.join(base_path, "풍력발전단지_기상관측데이터.csv")),
+            'real_power': pd.read_csv(os.path.join(base_path, "풍력발전단지_실적데이터.csv"), encoding='cp949'),
+            'location': pd.read_csv(os.path.join(base_path, "풍력발전단지_호기별_위치정보.csv"), encoding='cp949'),
+            'ECMWF': pd.read_csv(os.path.join(base_path, "풍력발전단지_호기별_ECMWF_수치예보데이터.csv"), encoding='cp949'),
+            'LDAPS': pd.read_csv(os.path.join(base_path, "풍력발전단지_호기별_LDAPS_수치예보데이터.csv"), encoding='cp949'),
+            # 'ECMWF': pd.read_csv(os.path.join(base_path, "풍력발전단지_ECMWF_수치예보데이터.csv")),
+            # 'LDAPS': pd.read_csv(os.path.join(base_path, "풍력발전단지_LDAPS_수치예보데이터.csv")),
+        }
+    ground_truth = data_dict['real_power']
     
     # 발전 호기 필터링
-    ecmwf_fcst = filtering_id(ecmwf_fcst, location, category_name)
-    um_fcst    = filtering_id(um_fcst, location, category_name)
-    wrf_fcst   = filtering_id(wrf_fcst, location, category_name)
-
-    ecmwf_fcst = remove_columns(ecmwf_fcst, del_feature)
-    um_fcst = remove_columns(um_fcst, del_feature)
-    wrf_fcst = remove_columns(wrf_fcst, del_feature)
-
-    # 동일 CRTN_TM, FCST_TM 필터링
-    ecmwf_fcst, um_fcst, wrf_fcst, align_time = align_times(ecmwf_fcst, um_fcst, wrf_fcst)
+    data_dict['ECMWF'] = filtering_id(data_dict['ECMWF'], data_dict['location'], category_name)
+    data_dict['LDAPS'] = filtering_id(data_dict['LDAPS'], data_dict['location'], category_name)
     
-    # 데이터 Input 구조 
-    if structure == 'independence':
-        data_list = [ecmwf_fcst, um_fcst, wrf_fcst, weather_gt, power_gt]
-    elif structure == 'merge':
-        combined_df = pd.concat([ecmwf_fcst, um_fcst, wrf_fcst])
-        combined_df = combined_df.sort_values(by=["AREA_GRP_ID", "CRTN_TM", "FCST_TM"]).reset_index(drop=True)
-        data_list = [combined_df, location, weather_gt, power_gt]
+    # 사용하지 않는 Feature 제거
+    data_dict['ECMWF'] = remove_columns(data_dict['ECMWF'], del_feature)
+    data_dict['LDAPS'] = remove_columns(data_dict['LDAPS'], del_feature)
+
+    # 동일 CRTN_TM, FCST_TM 가지는 데이터만 모델링 진행
+    if align_time:
+        data_list, common_times = align_times([data_dict['ECMWF'], data_dict['LDAPS']])
+        data_dict['ECMWF'], data_dict['LDAPS'] = data_list
     
-    # 데이터 전처리
-    if scale:
-        data_list, scaler_dict = apply_scaling(data_list, scale, structure)
+    # 위치(호기)별로 데이터 분할
+    data_dict['ECMWF'] = [group.reset_index(drop=True) for _, group in data_dict['ECMWF'].groupby('AREA_GRP_ID')]
+    data_dict['LDAPS'] = [group.reset_index(drop=True) for _, group in data_dict['LDAPS'].groupby('AREA_GRP_ID')]
 
-
-
-    print(f"train: CAT_001: {Counter(trn_category['CAT_001'])}  CAT_002: {Counter(trn_category['CAT_002'])}")
-    print(f"valid: CAT_001: {Counter(val_category['CAT_001'])}  CAT_002: {Counter(val_category['CAT_002'])}")
-    print(f"test: CAT_001: {Counter(tst_category['CAT_001'])}  CAT_002: {Counter(tst_category['CAT_002'])}")
+    # FCST_TM 이 동일한 경우, LEAD_TM 기준으로 전처리
+    if lead_time_align:
+        data_dict['ECMWF'], data_dict['LDAPS'] = process_and_sort_dfs([data_dict['ECMWF'], data_dict['LDAPS']])
+    else:
+        data_dict['ECMWF'] = [df.sort_values(by=["CRTN_TM", "FCST_TM"]).reset_index(drop=True) for df in data_dict['ECMWF']]
+        data_dict['LDAPS'] = [df.sort_values(by=["CRTN_TM", "FCST_TM"]).reset_index(drop=True) for df in data_dict['LDAPS']]
     
-    return information_dict, trn_list, val_list, tst_list
+    # 데이터 Input 구조 설정 및 Train/val/test 분할, 전처리
+    data_dict = split_processing(data_dict, 
+                                    input_structure = input_structure, 
+                                    split_rate      = split_rate, 
+                                    scale           = scale, 
+                                    pre_training    = pre_training)
+    
+    print(f"ECMWF 발전단지 호기 수: {len(data_dict['ECMWF'])} | LDAPS 발전단지 호기 수: {len(data_dict['LDAPS'])}")
+    print(f"Train length: {len(data_dict['ECMWF'][0]['train'])} | Val length: {len(data_dict['ECMWF'][0]['val'])} | Test length: {len(data_dict['ECMWF'][0]['test'])}")
+
+    return data_dict, ground_truth
 
 
 # 발전 호기 필터링
@@ -79,55 +92,165 @@ def filtering_id(fcst, location, category_name):
     filtered_wind_ecmwf = fcst[fcst['AREA_GRP_ID'].isin(unit_ids)]
     return filtered_wind_ecmwf
 
-# 동일 CRTN_TM, FCST_TM 필터링
-def align_times(df1, df2, df3):
-    for df in [df1, df2, df3]:
-        df = df.copy()
-        df.loc[:, 'CRTN_TM'] = pd.to_datetime(df['CRTN_TM'], format='%Y%m%d%H%M')
-        df.loc[:, 'FCST_TM'] = pd.to_datetime(df['FCST_TM'], format='%Y%m%d%H%M')
-    
-    df1_times = set(df1[['CRTN_TM', 'FCST_TM']].drop_duplicates().apply(tuple, axis=1))
-    df2_times = set(df2[['CRTN_TM', 'FCST_TM']].drop_duplicates().apply(tuple, axis=1))
-    df3_times = set(df3[['CRTN_TM', 'FCST_TM']].drop_duplicates().apply(tuple, axis=1))
-    
-    common_times = sorted(df1_times.intersection(df2_times, df3_times))
-    
-    filtered_df1 = df1[df1[['CRTN_TM', 'FCST_TM']].apply(tuple, axis=1).isin(common_times)]
-    filtered_df2 = df2[df2[['CRTN_TM', 'FCST_TM']].apply(tuple, axis=1).isin(common_times)]
-    filtered_df3 = df3[df3[['CRTN_TM', 'FCST_TM']].apply(tuple, axis=1).isin(common_times)]
-    
-    return filtered_df1, filtered_df2, filtered_df3, common_times
+# 동일 CRTN_TM, FCST_TM 가지는 데이터만 모델링 진행
+def align_times(data_list):
+    # 데이터 포맷 변환
+    for i, df in enumerate(data_list):
+        df['CRTN_TM'] = pd.to_datetime(df['CRTN_TM'], errors='coerce', format='%Y-%m-%d %H:%M:%S')
+        df['FCST_TM'] = pd.to_datetime(df['FCST_TM'], errors='coerce', format='%Y-%m-%d %H:%M:%S')
+        data_list[i] = df.dropna(subset=['CRTN_TM', 'FCST_TM']).reset_index(drop=True)
 
-# 특정 column 제거
+    time_sets = [
+        set(df[['CRTN_TM', 'FCST_TM']].drop_duplicates().apply(tuple, axis=1)) for df in data_list
+    ]
+
+    common_times = sorted(set.intersection(*time_sets))
+
+    filtered_data_list = [
+        df[df[['CRTN_TM', 'FCST_TM']].apply(tuple, axis=1).isin(common_times)].reset_index(drop=True)
+        for df in data_list
+    ]
+
+    return filtered_data_list, common_times
+
+# 사용하지 않는 Feature 제거
 def remove_columns(df, columns):
     df = df.drop(columns=[col for col in columns if col in df.columns], errors='ignore')
     return df
 
-# 데이터 전처리
-def apply_scaling(data_list, data_names, scale, structure):
+# LEAD_TM 기준으로 데이터 전처리
+def process_and_sort_dfs(dfs):
+    processed_dfs = []
+    
+    for df in dfs:
+        df = df.loc[df.groupby('FCST_TM')['LEAD_TM'].idxmin()]
+        df = df.sort_values(by='CRTN_TM').reset_index(drop=True)
+        
+        processed_dfs.append(df)
+    return processed_dfs
+
+
+def split_processing(data_dict, test_size=0.2, random_state=42):
+    result_dict = {}
+
+    for key, df_list in data_dict.items():
+        result_dict[key] = []
+        
+        for df in df_list:
+            train_df, test_df = train_test_split(df, test_size=test_size, random_state=random_state)
+            scaler = MinMaxScaler(feature_range=(0, 1))
+            
+            train_df_normalized = train_df.copy()
+            test_df_normalized = test_df.copy()
+            
+            cols_to_normalize = df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
+            
+            train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize])
+            test_df_normalized[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize])
+            
+            result_dict[key].append({
+                'train': train_df_normalized,
+                'test': test_df_normalized,
+                'scaler': scaler
+            })
+    return result_dict
+
+# 데이터 Input 구조 설정 및 Train/val/test 분할, 전처리
+def split_processing(data_dict, 
+                        input_structure='independence', 
+                        split_rate=[0.8, 0.1, 0.1], 
+                        scale='minmax', 
+                        pre_training=False, 
+                        random_state=42):
+    
     scaler_map = {
         'minmax': MinMaxScaler(feature_range=(-1, 1)),
         'minmax_square': MinMaxScaler(),
         'standard': StandardScaler()
     }
-    scaler = scaler_map.get(scale)
-    scaler_dict = {}
+    scaler = scaler_map[scale]
+    result_dict = {}
+
+    relevant_keys = ['ECMWF', 'LDAPS']
+    filtered_data_dict = {key: data_dict[key] for key in relevant_keys if key in data_dict}
+
+    if input_structure == 'independence':
+        for key, df_list in filtered_data_dict.items():
+            result_dict[key] = []
+            
+            for df in df_list:
+                if pre_training:
+                    # Pre-training: Train 데이터만 사용
+                    train_df = df.copy()
+                    train_df_normalized = train_df.copy()
+                    cols_to_normalize = df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
+                    train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                    result_dict[key].append({'train': train_df_normalized, 'scaler': scaler})
+                else:
+                    # Train/Validation/Test Split
+                    train_size = split_rate[0]
+                    val_size = split_rate[1] / (1 - train_size)  # Validation 비율 조정
+                    
+                    train_df, temp_df = train_test_split(df, test_size=1-train_size, random_state=random_state, shuffle=False)
+                    val_df, test_df = train_test_split(temp_df, test_size=1-val_size, random_state=random_state, shuffle=False)
+                    
+                    # 복사 및 정규화
+                    train_df_normalized = train_df.copy()
+                    val_df_normalized = val_df.copy()
+                    test_df_normalized = test_df.copy()
+                    cols_to_normalize = df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
+                    
+                    train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                    val_df_normalized[cols_to_normalize] = scaler.transform(val_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                    test_df_normalized[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                    
+                    result_dict[key].append({
+                        'train': train_df_normalized,
+                        'val': val_df_normalized,
+                        'test': test_df_normalized,
+                        'scaler': scaler
+                    })
+
+    elif input_structure == 'merge':
+        merged_list = zip(data_dict['ECMWF'], data_dict['LDAPS'])
+        result_dict['merged'] = []
+        
+        for ecmwf_df, ldaps_df in merged_list:
+            # 인덱스 정렬 및 병합
+            merged_df = pd.merge(ecmwf_df, ldaps_df, on=['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'], suffixes=('_ecmwf', '_ldaps'))
+            
+            if pre_training:
+                # Pre-training: Train 데이터만 사용
+                train_df = merged_df.copy()
+                train_df_normalized = train_df.copy()
+                cols_to_normalize = merged_df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
+                train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                result_dict['merged'].append({'train': train_df_normalized, 'scaler': scaler})
+            else:
+                # Train/Validation/Test Split
+                train_size = split_rate[0]
+                val_size = split_rate[1] / (1 - train_size)  # Validation 비율 조정
+
+                train_df, temp_df = train_test_split(merged_df, test_size=1-train_size, random_state=random_state, shuffle=False)
+                val_df, test_df = train_test_split(temp_df, test_size=1-val_size, random_state=random_state, shuffle=False)
+
+                # 복사 및 정규화
+                train_df_normalized = train_df.copy()
+                val_df_normalized = val_df.copy()
+                test_df_normalized = test_df.copy()
+                cols_to_normalize = merged_df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
+                
+                train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                val_df_normalized[cols_to_normalize] = scaler.transform(val_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                test_df_normalized[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                
+                result_dict['merged'].append({
+                    'train': train_df_normalized,
+                    'val': val_df_normalized,
+                    'test': test_df_normalized,
+                    'scaler': scaler
+                })
+    else:
+        raise ValueError("Mode should be either 'independence' or 'merge'")
     
-    if structure == 'independence':
-        scaled_data_list = []
-        for i, df in enumerate(data_list):
-            norm_df = df.copy()
-            norm_df.iloc[:, 2:] = scaler.fit_transform(norm_df.iloc[:, 2:]) ** (2 if scale == 'minmax_square' else 1)
-            scaled_data_list.append(norm_df)
-            scaler_dict[data_names[i]] = scaler
-            scaler = scaler_map.get(scale)
-    
-    elif structure == 'merge':
-        norm_df = data_list[0].copy()
-        norm_df.iloc[:, 2:] = scaler.fit_transform(norm_df.iloc[:, 2:]) ** (2 if scale == 'minmax_square' else 1)
-        scaled_data_list = [norm_df]
-        scaler_dict['scaler_merged'] = scaler
-    
-    print(f'{scale} Normalization done')
-    
-    return scaled_data_list, scaler_dict
+    return result_dict

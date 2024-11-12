@@ -1,19 +1,21 @@
 DEFAULT:
-  exp_name: LG_multimodal
+  exp_name: KETI_weather_prediction
   seed: 42
 
 DATASET:
   datadir: ../data
-  train_only: null
   scale: standard
-  split_rate: [0.9, 0.1, 0.1]
+  split_rate: [0.8, 0.1, 0.1]
   batch_size: 128
   num_workers: 0
-  train_test_predefined: true
   shuffle: true
   pin_memory: true
   drop_last: true
-  classification: false
+  category_name: solar
+  data_version: version2_241107
+  input_structure: independence
+  align_time: False
+  lead_time_align: False
 
 TRAIN:
   epoch: 25
@@ -26,6 +28,8 @@ TRAIN:
   pre_training: false
   data_num: 0
   fine_tuning_method: full
+  grad_accum_steps: 1
+  mixed_precision: fp16
   wandb: 
     use: false
     wandb_iter: 500

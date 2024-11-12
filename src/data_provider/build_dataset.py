@@ -1,62 +1,100 @@
-from torch.utils.data import Dataset
-import numpy as np
-import pandas as pd
 import torch
-import warnings
+from torch.utils.data import Dataset
+import pandas as pd
+import numpy as np
 
-warnings.filterwarnings('ignore')
 
-class LG_BuildDataset(Dataset):
-    def __init__(self, data_list: list):
-        
-        self.input_category = data_list[0]
-        self.input_continuous = data_list[1]
-        self.input_tsa = data_list[2]
-        self.input_tsb = data_list[3]
-        self.target = data_list[4]
-        
-        self.data_tsa = pd.DataFrame(self.input_tsa,
-                                    columns=self.input_tsa.columns,
-                                    index=self.input_tsa.index)
-        
-        self.data_tsb = pd.DataFrame(self.input_tsb,
-                                    columns=self.input_tsb.columns,
-                                    index=self.input_tsb.index)
-        
-        self.valid_idxs = np.array(self.input_category.index)
-        
-        print(f"# of valid windows: {len(self.valid_idxs)}")
+class WeatherPredictionDataset(Dataset):
+    def __init__(self, data_dict: dict, ground_truth: pd.DataFrame,
+                 category_name: str, input_structure: str = 'independence',
+                 type: str = 'train'):
 
-    def __getitem__(self, idx):
-        i = self.valid_idxs[idx]
-        # Tabular dataset
-        input_tabular_cat = np.array(self.input_category.loc[i])
-        input_tabular_con = np.array(self.input_continuous.loc[i])
-        
-        # Time-series A dataset
-        input_tsa = np.array(self.input_tsa.loc[i])
+        self.datasets = {}  # 각 호기별 데이터셋을 저장할 딕셔너리
 
-        # Time-series B dataset
-        input_tsb = np.array(self.input_tsb.loc[i])
+        # 데이터 구성
+        if input_structure == 'independence':
+            for model_key in ['ECMWF', 'LDAPS']:
+                self.datasets[model_key] = []
 
-        # Label dataset
-        target = np.array(self.target.loc[i])
+                for entry_idx, entry in enumerate(data_dict[model_key]):
+                    df = entry[type].copy()
+
+                    # wind의 경우 AREA_GRP_ID에서 '4593_001'과 같은 값 중 '4593'만 사용
+                    if category_name == 'wind':
+                        df['AREA_GRP_ID'] = df['AREA_GRP_ID'].astype(str).str.split('_').str[0]
+
+                    # ground_truth와 병합하여 타겟 추출
+                    merged = pd.merge(
+                        df,
+                        ground_truth,
+                        left_on=['AREA_GRP_ID', 'FCST_TM'],
+                        right_on=['ID', 'TM'],
+                        how='inner'
+                    )
+
+                    # inputs와 targets 구성
+                    inputs = merged.drop(columns=['QGEN', 'ID', 'TM'])
+                    targets = merged['QGEN']
+
+                    # 각 호기별 데이터셋 저장
+                    self.datasets[model_key].append({
+                        'inputs': inputs.reset_index(drop=True),
+                        'targets': targets.reset_index(drop=True)
+                    })
+
+        elif input_structure == 'merge':
+            self.datasets['merge'] = []
+
+            for entry_idx, entry in enumerate(data_dict['merge']):
+                df = entry[type].copy()
+
+                # wind의 경우 AREA_GRP_ID에서 '4593_001'과 같은 값 중 '4593'만 사용
+                if category_name == 'wind':
+                    df['AREA_GRP_ID'] = df['AREA_GRP_ID'].astype(str).str.split('_').str[0]
+
+                # ground_truth와 병합하여 타겟 추출
+                merged = pd.merge(
+                    df,
+                    ground_truth,
+                    left_on=['AREA_GRP_ID', 'FCST_TM'],
+                    right_on=['ID', 'TM'],
+                    how='inner'
+                )
+
+                # inputs와 targets 구성
+                inputs = merged.drop(columns=['QGEN', 'ID', 'TM'])
+                targets = merged['QGEN']
+
+                # 병합된 데이터 저장
+                self.datasets['merge'].append({
+                    'inputs': inputs.reset_index(drop=True),
+                    'targets': targets.reset_index(drop=True)
+                })
+
+        else:
+            raise ValueError("input_structure must be either 'independence' or 'merge'")
+
+        # 각 데이터셋의 유효 인덱스 생성
+        for key in self.datasets:
+            for dataset in self.datasets[key]:
+                dataset['valid_idxs'] = np.arange(len(dataset['inputs']))
+
+    def __getitem__(self, idx, model_key='ECMWF', entry_idx=0):
+        dataset = self.datasets[model_key][entry_idx]
+        i = dataset['valid_idxs'][idx]
+
+        # Input features
+        input_features = np.array(dataset['inputs'].iloc[i])
+
+        # Target value
+        target_value = np.array(dataset['targets'].iloc[i])
 
         item = {
-            'inputs': {
-                'tabular': {
-                    'cat': torch.Tensor(input_tabular_cat),
-                    'con': torch.Tensor(input_tabular_con)
-                },
-                'tsa': torch.Tensor(input_tsa),
-                'tsb': torch.Tensor(input_tsb)
-            },
-            'targets': torch.Tensor(target)
+            'inputs': torch.Tensor(input_features),
+            'targets': torch.Tensor([target_value])  # Ensure target is a tensor with a single value
         }
-                
+
         return item
-    
-    def __len__(self):        
-        return len(self.valid_idxs)
-    
-    
+
+    def __len__(self, model_key='ECMWF', entry_idx=0):
+        return len(self.datasets[model_key][entry_idx]['valid_idxs'])
