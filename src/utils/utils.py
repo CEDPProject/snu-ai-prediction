@@ -120,6 +120,47 @@ def load_resume_model(model, loaddir: str, resume: int, pre_training: bool, fine
             print(f'Fine tuning method: Linear probing')
     print('load model from (version {})'.format(resume))
 
+def prepare_data(current_loader, saved_data_dir="saved_data"):
+    """
+    Load or prepare data using model_key and area_grp_id extracted from current_loader.
+    If data exists, load it; otherwise, process and save it.
+    """
+    model_key, area_grp_id = current_loader.model_key, current_loader.area_grp_id  # loader에서 직접 추출
+    
+    # Define the directory structure
+    model_dir = os.path.join(saved_data_dir, str(model_key))
+    area_dir = os.path.join(model_dir, str(area_grp_id))
+    os.makedirs(area_dir, exist_ok=True)
+    
+    # Define file paths
+    x_file_path = os.path.join(area_dir, "x.npy")
+    y_file_path = os.path.join(area_dir, "y.npy")
+    
+    if os.path.exists(x_file_path) and os.path.exists(y_file_path):
+        print(f"Loading preprocessed data for (model_key={model_key}, area_grp_id={area_grp_id})...")
+        all_x = np.load(x_file_path)
+        all_y = np.load(y_file_path)
+    else:
+        print(f"Processing data for (model_key={model_key}, area_grp_id={area_grp_id})...")
+        all_x, all_y = [], []
+        total_batches = len(current_loader)
+        
+        for batch_idx, batch in enumerate(current_loader, start=1):
+            if batch_idx % 100 == 0 or batch_idx == total_batches:
+                print(f"Processing... {batch_idx}/{total_batches} ({(batch_idx / total_batches) * 100:.2f}%)")
+            x, y = batch['inputs'], batch['targets']
+            all_x.append(x.detach().cpu().numpy())
+            all_y.append(y.detach().cpu().numpy())
+        
+        all_x = np.concatenate(all_x, axis=0)
+        all_y = np.concatenate(all_y, axis=0)
+        
+        print(f"Saving processed data for (model_key={model_key}, area_grp_id={area_grp_id})...")
+        np.save(x_file_path, all_x)
+        np.save(y_file_path, all_y)
+    
+    return all_x, all_y
+
 class Float32Encoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.float32):
