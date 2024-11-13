@@ -1,4 +1,3 @@
-from torch.utils.data import Dataset
 import pandas as pd
 import os
 import numpy as np
@@ -44,7 +43,8 @@ def load_dataset(
             # 'ECMWF': pd.read_csv(os.path.join(base_path, "풍력발전단지_ECMWF_수치예보데이터.csv")),
             # 'LDAPS': pd.read_csv(os.path.join(base_path, "풍력발전단지_LDAPS_수치예보데이터.csv")),
         }
-    ground_truth = data_dict['real_power']
+
+    ground_truth = data_dict['real_power'].drop(columns=['NAME'])
     
     # 발전 호기 필터링
     data_dict['ECMWF'] = filtering_id(data_dict['ECMWF'], data_dict['location'], category_name)
@@ -71,16 +71,17 @@ def load_dataset(
         data_dict['LDAPS'] = [df.sort_values(by=["CRTN_TM", "FCST_TM"]).reset_index(drop=True) for df in data_dict['LDAPS']]
     
     # 데이터 Input 구조 설정 및 Train/val/test 분할, 전처리
-    data_dict = split_processing(data_dict, 
+    data_dict, scaler_dict = split_processing(data_dict, 
                                     input_structure = input_structure, 
                                     split_rate      = split_rate, 
                                     scale           = scale, 
                                     pre_training    = pre_training)
     
+    features = data_dict['ECMWF']['5375']['train'].columns
     print(f"ECMWF 발전단지 호기 수: {len(data_dict['ECMWF'])} | LDAPS 발전단지 호기 수: {len(data_dict['LDAPS'])}")
-    print(f"Train length: {len(data_dict['ECMWF'][0]['train'])} | Val length: {len(data_dict['ECMWF'][0]['val'])} | Test length: {len(data_dict['ECMWF'][0]['test'])}")
-
-    return data_dict, ground_truth
+    print(f"Train length: {len(data_dict['ECMWF']['5375']['train'])} | Val length: {len(data_dict['ECMWF']['5375']['val'])} | Test length: {len(data_dict['ECMWF']['5375']['test'])}")
+    
+    return data_dict, ground_truth, features, scaler_dict
 
 
 # 발전 호기 필터링
@@ -110,7 +111,7 @@ def align_times(data_list):
         df[df[['CRTN_TM', 'FCST_TM']].apply(tuple, axis=1).isin(common_times)].reset_index(drop=True)
         for df in data_list
     ]
-
+    
     return filtered_data_list, common_times
 
 # 사용하지 않는 Feature 제거
@@ -157,100 +158,104 @@ def split_processing(data_dict, test_size=0.2, random_state=42):
 
 # 데이터 Input 구조 설정 및 Train/val/test 분할, 전처리
 def split_processing(data_dict, 
-                        input_structure='independence', 
-                        split_rate=[0.8, 0.1, 0.1], 
-                        scale='minmax', 
-                        pre_training=False, 
-                        random_state=42):
+                     input_structure='independence', 
+                     split_rate=[0.8, 0.1, 0.1], 
+                     scale='minmax', 
+                     pre_training=False, 
+                     random_state=42):
     
     scaler_map = {
         'minmax': MinMaxScaler(feature_range=(-1, 1)),
         'minmax_square': MinMaxScaler(),
         'standard': StandardScaler()
     }
-    scaler = scaler_map[scale]
-    result_dict = {}
+    scaler_type = scaler_map[scale]
+    result_dict = {}  # 결과를 저장할 딕셔너리
+    scaler_dict = {}  # AREA_GRP_ID 별로 스케일러를 저장할 딕셔너리
 
     relevant_keys = ['ECMWF', 'LDAPS']
     filtered_data_dict = {key: data_dict[key] for key in relevant_keys if key in data_dict}
 
     if input_structure == 'independence':
         for key, df_list in filtered_data_dict.items():
-            result_dict[key] = []
+            result_dict[key] = {}
             
             for df in df_list:
-                if pre_training:
-                    # Pre-training: Train 데이터만 사용
-                    train_df = df.copy()
-                    train_df_normalized = train_df.copy()
-                    cols_to_normalize = df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
-                    train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
-                    result_dict[key].append({'train': train_df_normalized, 'scaler': scaler})
-                else:
-                    # Train/Validation/Test Split
-                    train_size = split_rate[0]
-                    val_size = split_rate[1] / (1 - train_size)  # Validation 비율 조정
+                area_grp_ids = df['AREA_GRP_ID'].unique()
+                
+                for area_grp_id in area_grp_ids:
+                    area_df = df[df['AREA_GRP_ID'] == area_grp_id].copy()
                     
-                    train_df, temp_df = train_test_split(df, test_size=1-train_size, random_state=random_state, shuffle=False)
-                    val_df, test_df = train_test_split(temp_df, test_size=1-val_size, random_state=random_state, shuffle=False)
+                    scaler = scaler_type  # 각 그룹마다 새로운 스케일러 생성
+                    cols_to_normalize = area_df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
                     
-                    # 복사 및 정규화
-                    train_df_normalized = train_df.copy()
-                    val_df_normalized = val_df.copy()
-                    test_df_normalized = test_df.copy()
-                    cols_to_normalize = df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
+                    if pre_training:
+                        # Pre-training: Train 데이터만 사용
+                        train_df = area_df.copy()
+                        train_df[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                        result_dict[key][str(area_grp_id)] = {'train': train_df, 'scaler': scaler}
+                    else:
+                        # Train/Validation/Test Split
+                        train_size = split_rate[0]
+                        val_size = split_rate[1] / (1 - train_size)  # Validation 비율 조정
+                        
+                        train_df, temp_df = train_test_split(area_df, test_size=1-train_size, random_state=random_state, shuffle=False)
+                        val_df, test_df = train_test_split(temp_df, test_size=1-val_size, random_state=random_state, shuffle=False)
+                        
+                        train_df[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                        val_df[cols_to_normalize] = scaler.transform(val_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                        test_df[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                        
+                        result_dict[key][str(area_grp_id)] = {
+                            'train': train_df,
+                            'val': val_df,
+                            'test': test_df,
+                            'scaler': scaler
+                        }
                     
-                    train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
-                    val_df_normalized[cols_to_normalize] = scaler.transform(val_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
-                    test_df_normalized[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
-                    
-                    result_dict[key].append({
-                        'train': train_df_normalized,
-                        'val': val_df_normalized,
-                        'test': test_df_normalized,
-                        'scaler': scaler
-                    })
+                    # 스케일러 저장
+                    scaler_dict[(key, str(area_grp_id))] = scaler
 
     elif input_structure == 'merge':
+        result_dict['merged'] = {}
         merged_list = zip(data_dict['ECMWF'], data_dict['LDAPS'])
-        result_dict['merged'] = []
         
         for ecmwf_df, ldaps_df in merged_list:
-            # 인덱스 정렬 및 병합
             merged_df = pd.merge(ecmwf_df, ldaps_df, on=['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'], suffixes=('_ecmwf', '_ldaps'))
             
-            if pre_training:
-                # Pre-training: Train 데이터만 사용
-                train_df = merged_df.copy()
-                train_df_normalized = train_df.copy()
-                cols_to_normalize = merged_df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
-                train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
-                result_dict['merged'].append({'train': train_df_normalized, 'scaler': scaler})
-            else:
-                # Train/Validation/Test Split
-                train_size = split_rate[0]
-                val_size = split_rate[1] / (1 - train_size)  # Validation 비율 조정
-
-                train_df, temp_df = train_test_split(merged_df, test_size=1-train_size, random_state=random_state, shuffle=False)
-                val_df, test_df = train_test_split(temp_df, test_size=1-val_size, random_state=random_state, shuffle=False)
-
-                # 복사 및 정규화
-                train_df_normalized = train_df.copy()
-                val_df_normalized = val_df.copy()
-                test_df_normalized = test_df.copy()
-                cols_to_normalize = merged_df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
+            area_grp_ids = merged_df['AREA_GRP_ID'].unique()
+            
+            for area_grp_id in area_grp_ids:
+                area_df = merged_df[merged_df['AREA_GRP_ID'] == area_grp_id].copy()
                 
-                train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
-                val_df_normalized[cols_to_normalize] = scaler.transform(val_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
-                test_df_normalized[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                scaler = scaler_type  # 각 그룹마다 새로운 스케일러 생성
+                cols_to_normalize = area_df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
                 
-                result_dict['merged'].append({
-                    'train': train_df_normalized,
-                    'val': val_df_normalized,
-                    'test': test_df_normalized,
-                    'scaler': scaler
-                })
+                if pre_training:
+                    train_df = area_df.copy()
+                    train_df[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                    result_dict['merged'][str(area_grp_id)] = {'train': train_df, 'scaler': scaler}
+                else:
+                    train_size = split_rate[0]
+                    val_size = split_rate[1] / (1 - train_size)
+                    
+                    train_df, temp_df = train_test_split(area_df, test_size=1-train_size, random_state=random_state, shuffle=False)
+                    val_df, test_df = train_test_split(temp_df, test_size=1-val_size, random_state=random_state, shuffle=False)
+                    
+                    train_df[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                    val_df[cols_to_normalize] = scaler.transform(val_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                    test_df[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
+                    
+                    result_dict['merged'][str(area_grp_id)] = {
+                        'train': train_df,
+                        'val': val_df,
+                        'test': test_df,
+                        'scaler': scaler
+                    }
+                
+                # 스케일러 저장
+                scaler_dict[('merged', str(area_grp_id))] = scaler
     else:
         raise ValueError("Mode should be either 'independence' or 'merge'")
     
-    return result_dict
+    return result_dict, scaler_dict

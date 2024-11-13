@@ -10,6 +10,63 @@ import shutil
 import random
 from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score
 
+
+def RSE(pred, true):
+    return np.sqrt(np.sum((true - pred) ** 2)) / np.sqrt(np.sum((true - true.mean()) ** 2))
+
+def CORR(pred, true):
+    u = ((true - true.mean(0)) * (pred - pred.mean(0))).sum(0)
+    d = np.sqrt(((true - true.mean(0)) ** 2 * (pred - pred.mean(0)) ** 2).sum(0))
+    return (u / d).mean(-1)
+
+def MAE(pred, true):
+    return np.mean(np.abs(pred - true))
+
+def MSE(pred, true):
+    return np.mean((pred - true) ** 2)
+
+def RMSE(pred, true):
+    return np.sqrt(MSE(pred, true))
+
+def MAPE(pred, true):
+    true = np.where(true == 0, 1e-5, true)  # Avoid division by zero
+    return np.mean(np.abs((pred - true) / true))
+
+def MSPE(pred, true):
+    true = np.where(true == 0, 1e-5, true)  # Avoid division by zero
+    return np.mean(np.square((pred - true) / true))
+
+def cal_metric(pred, true):
+    mae = MAE(pred, true)
+    mse = MSE(pred, true)
+    rmse = RMSE(pred, true)
+    mape = MAPE(pred, true)
+    mspe = MSPE(pred, true)
+    rse = RSE(pred, true)
+    
+    metric_dict = {'MAE': mae,
+                   'MSE': mse,
+                   'RMSE': rmse,
+                   'MAPE': mape,
+                   'MSPE': mspe,
+                   'RSE': rse}
+    
+    print('mse: {:.4f}\t mae: {:.4f}\t mape: {:.4f}'.format(mse, mae, mape))
+    return metric_dict
+
+def cal_classification_metric(pred, true):
+    accuracy = accuracy_score(true, pred)
+    f1 = f1_score(true, pred)
+    recall = recall_score(true, pred)
+    precision = precision_score(true, pred)
+    metric_dict = {
+        'accuracy': accuracy,
+        'f1' : f1,
+        'recall' : recall,
+        'precision' : precision
+    }
+    return metric_dict
+
 def version_build(accelerator, logdir: str, resume: int=None) -> str:
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
@@ -62,3 +119,9 @@ def load_resume_model(model, loaddir: str, resume: int, pre_training: bool, fine
                     param.requires_grad = False
             print(f'Fine tuning method: Linear probing')
     print('load model from (version {})'.format(resume))
+
+class Float32Encoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.float32):
+            return float(obj)
+        return super().default(obj)

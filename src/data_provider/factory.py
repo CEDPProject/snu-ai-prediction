@@ -1,7 +1,7 @@
 import torch
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from data_provider.load_dataset import load_dataset
-from data_provider.build_dataset import WeatherPredictionDataset
+from data_provider.build_dataset import WeatherPredictionDataset, create_data_loaders
 from omegaconf import OmegaConf
 import warnings
 import pdb
@@ -29,18 +29,18 @@ def create_dataloader(
     assert category_name in ('solar', 'wind')
     assert input_structure in ('independence', 'merge')
 
-    data_dict, ground_truth = load_dataset(
-                        datadir                = datadir,
-                        category_name          = category_name,
-                        scale                  = scale,
-                        input_structure        = input_structure,
-                        pre_training           = pre_training,
-                        lead_time_align        = lead_time_align,
-                        del_feature            = ['SWDDIR'],
-                        data_version           = data_version,
-                        split_rate             = split_rate,
-                        align_time             = align_time,
-                        )
+    data_dict, ground_truth, features, scaler_dict = load_dataset(
+                            datadir                = datadir,
+                            category_name          = category_name,
+                            scale                  = scale,
+                            input_structure        = input_structure,
+                            pre_training           = pre_training,
+                            lead_time_align        = lead_time_align,
+                            del_feature            = ['SWDDIR'],
+                            data_version           = data_version,
+                            split_rate             = split_rate,
+                            align_time             = align_time,
+                            )
     
     trn_dataset = WeatherPredictionDataset(data_dict        = data_dict,
                                             ground_truth    = ground_truth,
@@ -59,27 +59,25 @@ def create_dataloader(
                                             type            = 'test')
     
     # torch dataloader
-    trn_dataloader = torch.utils.data.DataLoader(trn_dataset,
-                                                batch_size     =  batch_size,
-                                                shuffle        =  shuffle,
-                                                num_workers    =  num_workers,
-                                                pin_memory     =  pin_memory,
-                                                drop_last      =  drop_last)
+    trn_dataloader = create_data_loaders(trn_dataset,
+                                            batch_size     =  batch_size,
+                                            shuffle        =  shuffle,
+                                            num_workers    =  num_workers,
+                                            pin_memory     =  pin_memory,
+                                            drop_last      =  drop_last)
 
-    val_dataloader = torch.utils.data.DataLoader(val_dataset,
-                                                batch_size     =  batch_size,
-                                                shuffle        =  shuffle,
-                                                num_workers    =  num_workers,
-                                                pin_memory     =  pin_memory,
-                                                drop_last      =  drop_last)
+    val_dataloader = create_data_loaders(val_dataset,
+                                            batch_size     =  batch_size,
+                                            shuffle        =  shuffle,
+                                            num_workers    =  num_workers,
+                                            pin_memory     =  pin_memory,
+                                            drop_last      =  drop_last)
 
-    tst_dataloader = torch.utils.data.DataLoader(tst_dataset,
-                                                batch_size     =  batch_size,
-                                                shuffle        =  False,
-                                                num_workers    =  num_workers,
-                                                pin_memory     =  pin_memory,
-                                                drop_last      =  False)
-    
-    features = trn_dataset.datasets['ECMWF'][0]['inputs'].columns
-    
-    return trn_dataloader, val_dataloader, tst_dataloader, features
+    tst_dataloader = create_data_loaders(tst_dataset,
+                                            batch_size     =  batch_size,
+                                            shuffle        =  False,
+                                            num_workers    =  num_workers,
+                                            pin_memory     =  pin_memory,
+                                            drop_last      =  False)
+
+    return trn_dataloader, val_dataloader, tst_dataloader, features, scaler_dict

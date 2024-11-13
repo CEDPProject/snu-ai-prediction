@@ -3,3 +3,15 @@ TemporalFusionTransformer:
   gmlp_depth: 3
   attention_together: True
   RNN_type: GRU
+
+MLModelEnsemble:
+  selected_models: svr dt gpr
+  ridge_alpha: 1.0
+  rf_n_estimators: 100
+  rf_max_depth: None
+  svr_kernel: rbf
+  svr_C: 1.0
+  dt_max_depth: None
+
+
+# svr dt gpr

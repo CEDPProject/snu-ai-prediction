@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 from collections import OrderedDict
 from accelerate import Accelerator
+from utils.utils import cal_metric, Float32Encoder
+from utils.tools import EarlyStopping
 
 _logger = logging.getLogger('train')
 
@@ -28,7 +30,7 @@ class AverageMeter:
         self.count += n
         self.avg = self.sum / self.count
         
-def training(
+def training_dl(
     model, trainloader, validloader, criterion, optimizer, accelerator: Accelerator, 
     epochs: int, eval_epochs: int, log_epochs: int, log_eval_iter: int, wandb_iter: int,
     use_wandb: bool, ckp_metric: str, savedir: str, model_name: str, 
@@ -81,15 +83,6 @@ def training(
                             tsa.reshape(tabular_cat.size(0),-1), 
                             tsb.reshape(tabular_cat.size(0),-1)], axis=1)
                 
-            if classification:
-                roi_dict = get_roi_dict()
-                target = classification_label_generator(target.detach().cpu().numpy(), roi_dict)
-                target = torch.tensor(np.where(target == 1, 0, 1)).type(torch.float).cuda()
-
-                # target = torch.tensor(classification_label_generator(target.detach().cpu().numpy(), roi_dict)).type(torch.float).cuda()
-                
-                outputs = outputs.squeeze(1)
-
             loss = criterion(outputs, target)
             accelerator.backward(loss)
             
@@ -130,7 +123,7 @@ def training(
                         data_time  = data_time_m))
                 
         if (epoch+1) % eval_epochs == 0:
-            eval_metrics = test(
+            eval_metrics = test_dl(
                 model          = model, 
                 dataloader     = validloader, 
                 criterion      = criterion,
@@ -203,7 +196,7 @@ def training(
             np.save(os.path.join(savedir, f'Train_total_outputs.npy'), total_outputs)
             np.save(os.path.join(savedir, f'Train_total_targets.npy'), total_targets)
 
-def test(model, dataloader, criterion, accelerator: Accelerator, pre_training: int, log_eval_iter: int, 
+def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training: int, log_eval_iter: int, 
         savedir: str, model_name: str, name: str = 'TEST', return_output: bool = False, 
         classification: bool = False):
     
@@ -250,14 +243,6 @@ def test(model, dataloader, criterion, accelerator: Accelerator, pre_training: i
                             tsa.reshape(tabular_cat.size(0),-1), 
                             tsb.reshape(tabular_cat.size(0),-1)], axis=1)
                 
-            if classification:
-                roi_dict = get_roi_dict()
-                target = classification_label_generator(target.detach().cpu().numpy(), roi_dict)
-                target = torch.tensor(np.where(target == 1, 0, 1)).type(torch.float).cuda()
-
-                # target = torch.tensor(classification_label_generator(target.detach().cpu().numpy(), roi_dict)).type(torch.float).cuda()
-                outputs = outputs.squeeze(1)
-                
             # final loss
             loss = criterion(outputs, target)
 
@@ -297,19 +282,8 @@ def test(model, dataloader, criterion, accelerator: Accelerator, pre_training: i
     
     results = OrderedDict([('loss',losses_m.avg)])
     
-    if classification:
-        total_outputs = torch.Tensor(total_outputs).unsqueeze(1)
-        probs = torch.sigmoid(total_outputs)
-        binary_outputs = (probs >= 0.5).float()
-        binary_outputs = np.array(binary_outputs.squeeze())
-        metrics = cal_classification_metric(pred=binary_outputs, true=total_targets)
-    else:
-        metrics = cal_metric(pred = total_outputs, true = total_targets)
-        result_generator_SFR = ResultGeneratorSFR(total_outputs.reshape(total_outputs.shape[0], -1), 
-                                                total_targets.reshape(total_targets.shape[0], -1), 
-                                                './output/SFR')
-        LG_result_dict = result_generator_SFR.calc_acc_sfr()
-        results.update([(f'{k}', m) for k, m in LG_result_dict.items()])
+    metrics = cal_metric(pred = total_outputs, true = total_targets)
+    results.update([(f'{k}', m) for k, m in metrics.items()])
     
     # logging metrics
     _logger.info("\n{}: ".format(name) + " ".join('{}: {}'.format(k.upper(), m) for k, m in metrics.items()) + "\n")

@@ -34,7 +34,7 @@ TRAIN:
     use: false
     wandb_iter: 500
     exp_name: default
-    project_name: 'LG_multimodal'
+    project_name: 'KETI_weather_prediction'
     entity: null
 LOSS:
   loss_name: mse

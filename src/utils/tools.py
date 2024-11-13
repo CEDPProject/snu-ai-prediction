@@ -27,5 +27,4 @@ def update_information(cfg, section, key, value):
     if section not in cfg:
         cfg[section] = {}
     cfg[section][key] = value
-    # print(f"Added/Updated feature '{key}' in section '{section}' with value: {value}")
     return cfg

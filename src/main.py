@@ -8,13 +8,14 @@ from glob import glob
 import torch
 from omegaconf import OmegaConf
 
-from exp_builder import training, test
+from exp_builder_dl import training_dl, test_dl
+from exp_builder_ml import training_ml, test_ml
 from data_provider import create_dataloader
 from losses import create_criterion
 from optimizers import create_optimizer
 from models import create_model
 from utils.log import setup_default_logging
-from utils.utils import version_build, load_resume_model
+from utils.utils import version_build, load_resume_model, Float32Encoder
 from utils.tools import update_information
 from arguments import parser
 
@@ -51,27 +52,28 @@ def main(cfg):
     # set device
     if accelerator.is_local_main_process:
         _logger.info('Device: {}'.format(accelerator.device))
+    
 
     # load and define dataloader
-    trn_dataloader, val_dataloader, tst_dataloader, features = create_dataloader(
-                                    datadir                  = cfg.DATASET.datadir,
-                                    scale                    = cfg.DATASET.scale,
-                                    batch_size               = cfg.DATASET.batch_size,
-                                    shuffle                  = cfg.DATASET.shuffle,
-                                    num_workers              = cfg.DATASET.num_workers,
-                                    pin_memory               = cfg.DATASET.pin_memory,
-                                    pre_training             = cfg.TRAIN.pre_training,
-                                    drop_last                = cfg.DATASET.drop_last,
-                                    category_name            = cfg.DATASET.category_name,
-                                    input_structure          = cfg.DATASET.input_structure,
-                                    data_version             = cfg.DATASET.data_version,
-                                    lead_time_align          = cfg.DATASET.lead_time_align,
-                                    split_rate               = cfg.DATASET.split_rate,
-                                    align_time               = cfg.DATASET.align_time,
-                                    )
+    trn_dataloader, val_dataloader, tst_dataloader, features, scaler_dict = create_dataloader(
+                                                datadir                  = cfg.DATASET.datadir,
+                                                scale                    = cfg.DATASET.scale,
+                                                batch_size               = cfg.DATASET.batch_size,
+                                                shuffle                  = cfg.DATASET.shuffle,
+                                                num_workers              = cfg.DATASET.num_workers,
+                                                pin_memory               = cfg.DATASET.pin_memory,
+                                                pre_training             = cfg.TRAIN.pre_training,
+                                                drop_last                = cfg.DATASET.drop_last,
+                                                category_name            = cfg.DATASET.category_name,
+                                                input_structure          = cfg.DATASET.input_structure,
+                                                data_version             = cfg.DATASET.data_version,
+                                                lead_time_align          = cfg.DATASET.lead_time_align,
+                                                split_rate               = cfg.DATASET.split_rate,
+                                                align_time               = cfg.DATASET.align_time,
+                                                )
     
-    # update dim_in
-    update_information(cfg     = cfg, 
+    # update cfg
+    update_information(cfg      = cfg, 
                         section = 'MODELSETTING',
                         key     = 'dim_in',
                         value   = len(features))
@@ -82,31 +84,11 @@ def main(cfg):
         OmegaConf.save(cfg, os.path.join(savedir, 'configs.yaml'))
         print(OmegaConf.to_yaml(cfg))
     
-    breakpoint()
     # build Model
     model = create_model(
         modelname    = cfg.MODEL.modelname,
         params       = cfg.MODELSETTING
         )
-    
-    # load weights
-    if cfg.TRAIN.resume is not None:
-        load_resume_model(model=model, 
-                          loaddir=loaddir, 
-                          resume=cfg.TRAIN.resume, 
-                          pre_training=cfg.TRAIN.pre_training,
-                          fine_tuning_method=cfg.TRAIN.fine_tuning_method)
-    
-    _logger.info('# of learnable params: {}'.format(np.sum([p.numel() if p.requires_grad else 0 for p in model.parameters()])))
-    
-    # set training
-    criterion = create_criterion(loss_name='BCE') if cfg.DATASET.classification else create_criterion(loss_name=cfg.LOSS.loss_name)
-
-    optimizer = create_optimizer(model=model, opt_name=cfg.OPTIMIZER.opt_name, lr=cfg.OPTIMIZER.lr, params=cfg.OPTIMIZER.params)
-
-    model, optimizer, trn_dataloader, val_dataloader, tst_dataloader = accelerator.prepare(
-        model, optimizer, trn_dataloader, val_dataloader, tst_dataloader
-    )
     
     # wandb
     if cfg.TRAIN.wandb.use:
@@ -116,61 +98,94 @@ def main(cfg):
                    project = cfg.TRAIN.wandb.project_name, 
                    entity  = cfg.TRAIN.wandb.entity, 
                    config  = OmegaConf.to_container(cfg))
+        
+    _logger.info('Model name: {}'.format(model))
 
-    # fitting model
-    training(
-    model                = model, 
-    trainloader          = trn_dataloader, 
-    validloader          = val_dataloader, 
-    criterion            = criterion, 
-    optimizer            = optimizer,
-    accelerator          = accelerator, 
-    epochs               = cfg.TRAIN.epoch,
-    eval_epochs          = cfg.TRAIN.eval_epochs, 
-    log_epochs           = cfg.TRAIN.log_epochs,
-    log_eval_iter        = cfg.TRAIN.log_eval_iter,
-    use_wandb            = cfg.TRAIN.wandb.use, 
-    wandb_iter           = cfg.TRAIN.wandb.wandb_iter, 
-    ckp_metric           = cfg.TRAIN.ckp_metric, 
-    savedir              = savedir,
-    model_name           = cfg.MODEL.modelname,
-    early_stopping_count = cfg.TRAIN.early_stopping_count,
-    pre_training         = cfg.TRAIN.pre_training,
-    classification       = cfg.DATASET.classification,
-    return_output        = False
-    )
-    
-    # load best checkpoint weights
-    model.load_state_dict(torch.load(os.path.join(savedir, 'best_model.pt')))
+    if 'ML' in cfg.MODEL.modelname:
+        # ML Model Training
+        _logger.info('Training ML Model...')
+        
+        training_ml(model, trn_dataloader)
 
-    val_metrics = test(
-    model          = model, 
-    dataloader     = val_dataloader, 
-    criterion      = criterion, 
-    log_eval_iter  = cfg.TRAIN.log_eval_iter,
-    name           = 'VALID',
-    pre_training   = cfg.TRAIN.pre_training,
-    savedir        = savedir,
-    accelerator    = accelerator,
-    model_name     = cfg.MODEL.modelname,
-    classification = cfg.DATASET.classification, 
-    return_output  = False
-    )
-    
-    # test results
-    test_metrics = test(
-    model          = model, 
-    dataloader     = tst_dataloader, 
-    criterion      = criterion, 
-    log_eval_iter  = cfg.TRAIN.log_eval_iter,
-    name           = 'TEST',
-    pre_training   = cfg.TRAIN.pre_training,
-    savedir        = savedir,
-    accelerator    = accelerator,
-    model_name     = cfg.MODEL.modelname,
-    classification = cfg.DATASET.classification, 
-    return_output  = False
-    )
+        test_metrics = test_ml(model, tst_dataloader)
+        
+    else:
+        # load weights
+        if cfg.TRAIN.resume is not None:
+            load_resume_model(model=model, 
+                            loaddir=loaddir, 
+                            resume=cfg.TRAIN.resume, 
+                            pre_training=cfg.TRAIN.pre_training,
+                            fine_tuning_method=cfg.TRAIN.fine_tuning_method)
+        
+        _logger.info('# of learnable params: {}'.format(np.sum([p.numel() if p.requires_grad else 0 for p in model.parameters()])))
+        
+        model, optimizer, trn_dataloader, val_dataloader, tst_dataloader = accelerator.prepare(
+            model, optimizer, trn_dataloader, val_dataloader, tst_dataloader
+        )
+        
+        # set training
+        criterion = create_criterion(loss_name=cfg.LOSS.loss_name)
+        
+        # set optimizer
+        optimizer = create_optimizer(model=model, opt_name=cfg.OPTIMIZER.opt_name, lr=cfg.OPTIMIZER.lr, params=cfg.OPTIMIZER.params)
+
+        # DL Model Training
+        _logger.info('Training DL Model...')
+        
+        training_dl(
+        model                = model, 
+        trainloader          = trn_dataloader, 
+        validloader          = val_dataloader, 
+        criterion            = criterion, 
+        optimizer            = optimizer,
+        accelerator          = accelerator, 
+        epochs               = cfg.TRAIN.epoch,
+        eval_epochs          = cfg.TRAIN.eval_epochs, 
+        log_epochs           = cfg.TRAIN.log_epochs,
+        log_eval_iter        = cfg.TRAIN.log_eval_iter,
+        use_wandb            = cfg.TRAIN.wandb.use, 
+        wandb_iter           = cfg.TRAIN.wandb.wandb_iter, 
+        ckp_metric           = cfg.TRAIN.ckp_metric, 
+        savedir              = savedir,
+        model_name           = cfg.MODEL.modelname,
+        early_stopping_count = cfg.TRAIN.early_stopping_count,
+        pre_training         = cfg.TRAIN.pre_training,
+        classification       = cfg.DATASET.classification,
+        return_output        = False
+        )
+        
+        # load best checkpoint weights
+        model.load_state_dict(torch.load(os.path.join(savedir, 'best_model.pt')))
+
+        val_metrics = test_dl(
+        model          = model, 
+        dataloader     = val_dataloader, 
+        criterion      = criterion, 
+        log_eval_iter  = cfg.TRAIN.log_eval_iter,
+        name           = 'VALID',
+        pre_training   = cfg.TRAIN.pre_training,
+        savedir        = savedir,
+        accelerator    = accelerator,
+        model_name     = cfg.MODEL.modelname,
+        classification = cfg.DATASET.classification, 
+        return_output  = False
+        )
+        
+        # Test DL Model
+        test_metrics = test_dl(
+        model          = model, 
+        dataloader     = tst_dataloader, 
+        criterion      = criterion, 
+        log_eval_iter  = cfg.TRAIN.log_eval_iter,
+        name           = 'TEST',
+        pre_training   = cfg.TRAIN.pre_training,
+        savedir        = savedir,
+        accelerator    = accelerator,
+        model_name     = cfg.MODEL.modelname,
+        classification = cfg.DATASET.classification, 
+        return_output  = False
+        )
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
