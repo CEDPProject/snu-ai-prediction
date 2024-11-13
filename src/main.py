@@ -105,9 +105,9 @@ def main(cfg):
         # ML Model Training
         _logger.info('Training ML Model...')
         
-        model_dict = training_ml(model, trn_dataloader)
+        model_dict = training_ml(model, trn_dataloader, True, cfg.DATASET.category_name)
 
-        test_metrics = test_ml(model_dict, tst_dataloader)
+        test_metrics = test_ml(model_dict, tst_dataloader, True,cfg.DATASET.category_name)
         
     else:
         # load weights

@@ -125,7 +125,9 @@ def prepare_data(current_loader, saved_data_dir="saved_data"):
     Load or prepare data using model_key and area_grp_id extracted from current_loader.
     If data exists, load it; otherwise, process and save it.
     """
-    model_key, area_grp_id = current_loader.model_key, current_loader.area_grp_id  # loader에서 직접 추출
+    dataset = current_loader.dataset  # Access the dataset object
+    model_key = dataset.model_key  # Ensure the dataset has `model_key` attribute
+    area_grp_id = dataset.area_grp_id  # Ensure the dataset has `area_grp_id` attribute
     
     # Define the directory structure
     model_dir = os.path.join(saved_data_dir, str(model_key))
