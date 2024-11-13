@@ -40,8 +40,8 @@ def main(cfg):
     )
 
     # make save directory
-    savedir = os.path.join(cfg.DATASET.data_version, 
-                            cfg.RESULT.savedir,
+    savedir = os.path.join(cfg.RESULT.savedir,
+                            cfg.DATASET.data_version, 
                             cfg.MODEL.modelname, 
                             cfg.DEFAULT.exp_name)
     
