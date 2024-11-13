@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from utils.utils import cal_metric
 
-def training_ml(model, trn_loader):
+def training_ml(model, trn_loader, ):
     results = {}
     total_combinations = len(trn_loader)
     
@@ -28,7 +28,7 @@ def training_ml(model, trn_loader):
         
         print(f"Fitting model")
         # Train the model
-        model.ensemble.fit(all_x, all_y)
+        model.model.fit(all_x, all_y)
         
         print(f"Starting prediction")
         # Collect predictions
@@ -36,7 +36,7 @@ def training_ml(model, trn_loader):
         for batch in current_loader:
             x = batch['inputs']
             x_np = x.detach().cpu().numpy()
-            predictions = model.ensemble.predict(x_np)
+            predictions = model.model.predict(x_np)
             all_predictions.append(predictions)
         
         all_predictions = np.concatenate(all_predictions)
