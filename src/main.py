@@ -189,6 +189,7 @@ def main(cfg):
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
+        test_metrics = {str(key): value for key, value in test_metrics.items()}
         _logger.info('test_metrics: {}'.format(test_metrics))
         json.dump(test_metrics, open(os.path.join(savedir, 
                                 f'test_results.json'),'w'), indent='\t', cls=Float32Encoder)

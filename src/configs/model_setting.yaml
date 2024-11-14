@@ -5,7 +5,7 @@ TemporalFusionTransformer:
   RNN_type: GRU
 
 MLModelEnsemble:
-  selected_models: rf
+  selected_models: ridge
   ridge_alpha: 1.0
   rf_n_estimators: 100
   rf_max_depth: None
