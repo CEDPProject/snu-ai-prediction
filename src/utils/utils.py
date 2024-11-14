@@ -135,8 +135,8 @@ def prepare_data(current_loader, saved_data_dir="saved_data", status='train'):
     os.makedirs(area_dir, exist_ok=True)
     
     # Define file paths
-    x_file_path = os.path.join(area_dir, status, "_x.npy")
-    y_file_path = os.path.join(area_dir, status, "_y.npy")
+    x_file_path = os.path.join(area_dir, f"{status}_x.npy")
+    y_file_path = os.path.join(area_dir, f"{status}_y.npy")
     
     if os.path.exists(x_file_path) and os.path.exists(y_file_path):
         print(f"Loading preprocessed data for (model_key={model_key}, area_grp_id={area_grp_id})...")
