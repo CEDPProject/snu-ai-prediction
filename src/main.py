@@ -106,8 +106,8 @@ def main(cfg):
         # ML Model Training
         _logger.info('Training ML Model...')
         model_dict = training_ml(model, 
-                                cfg.DATASET.batch_size,
                                 trn_dataloader, 
+                                cfg.DATASET.batch_size,
                                 eval_merge_grp = True, 
                                 category_name = cfg.DATASET.category_name)
         

@@ -16,10 +16,9 @@ def merge_predictions(predictions, group_key, eval_merge_grp, category_name=None
     merged_results = {group: predictions}
     return {group: np.mean(merged_results[group], axis=0)}
 
-def training_ml(model_class, trn_loader, batch_size=1024, eval_merge_grp=False, category_name=None):
+def training_ml(model_class, trn_loader, eval_merge_grp=False, category_name=None):
     """
-    Train machine learning models for each dataset combination in the training loader,
-    with batch processing for memory efficiency during training.
+    Train machine learning models for each dataset combination in the training loader.
     """
     results = {}
     model_dict = {}
@@ -37,18 +36,9 @@ def training_ml(model_class, trn_loader, batch_size=1024, eval_merge_grp=False, 
             model_dict[(model_key, area_grp_id)] = model_instance
 
             print(f"Fitting model for ({model_key}, {area_grp_id})")
+            model_instance.fit(train_x, train_y)
 
-            # Batch training
-            num_samples = train_x.shape[0]
-            for start_idx in range(0, num_samples, batch_size):
-                end_idx = min(start_idx + batch_size, num_samples)
-                batch_x = train_x[start_idx:end_idx]
-                batch_y = train_y[start_idx:end_idx]
-
-                # Fit model on the current batch
-                model_instance.fit(batch_x, batch_y)
-
-            # Prediction and metric calculation (using all training data for evaluation)
+            # Prediction and metric calculation
             predictions = model_instance.model.predict(train_x)
 
             if eval_merge_grp:
@@ -58,8 +48,7 @@ def training_ml(model_class, trn_loader, batch_size=1024, eval_merge_grp=False, 
             else:
                 metrics = cal_metric(pred=predictions, true=train_y)
 
-            print(f"Metrics for ({model_key}, {area_grp_id}): {metrics}")
-            results[(model_key, area_grp_id)] = metrics
+            # print(f"Metrics for ({model_key}, {area_grp_id}): {metrics}")
 
     return model_dict
 
