@@ -20,6 +20,8 @@ def create_dataloader(
                 category_name: str,
                 input_structure: str,
                 data_version: str,
+                model_name: str,
+                target: str = 'power',
                 lead_time_align: bool = False,
                 split_rate: list = [0.7, 0.1, 0.2],
                 align_time: bool = True,
@@ -29,7 +31,7 @@ def create_dataloader(
     assert category_name in ('solar', 'wind')
     assert input_structure in ('independence', 'merge')
 
-    data_dict, ground_truth, features, scaler_dict = load_dataset(
+    data_dict, features, scaler_dict = load_dataset(
                             datadir                = datadir,
                             category_name          = category_name,
                             scale                  = scale,
@@ -39,21 +41,20 @@ def create_dataloader(
                             del_feature            = ['SWDDIR'],
                             data_version           = data_version,
                             split_rate             = split_rate,
-                            align_time             = align_time,
+                            align_time             = align_time
                             )
     
     trn_dataset = WeatherPredictionDataset(data_dict        = data_dict,
-                                            ground_truth    = ground_truth,
                                             category_name   = category_name,
                                             input_structure = input_structure,
                                             type            = 'train')
+    
     val_dataset = WeatherPredictionDataset(data_dict        = data_dict,
-                                            ground_truth    = ground_truth,
                                             category_name   = category_name,
                                             input_structure = input_structure,
                                             type            = 'val')
+    
     tst_dataset = WeatherPredictionDataset(data_dict        = data_dict,
-                                            ground_truth    = ground_truth,
                                             category_name   = category_name,
                                             input_structure = input_structure,
                                             type            = 'test')
@@ -79,5 +80,8 @@ def create_dataloader(
                                             num_workers    =  num_workers,
                                             pin_memory     =  pin_memory,
                                             drop_last      =  False)
-
-    return trn_dataloader, val_dataloader, tst_dataloader, features, scaler_dict
+    
+    if 'ML' in model_name:
+        return data_dict, data_dict, data_dict, features, scaler_dict
+    else:
+        return trn_dataloader, val_dataloader, tst_dataloader, features, scaler_dict

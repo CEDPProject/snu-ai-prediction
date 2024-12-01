@@ -5,13 +5,14 @@ TemporalFusionTransformer:
   RNN_type: GRU
 
 MLModelEnsemble:
-  selected_models: ridge
+  selected_models: svr dt gpr
   ridge_alpha: 1.0
   rf_n_estimators: 100
-  rf_max_depth: None
+  rf_max_depth: 10
   svr_kernel: rbf
   svr_C: 1.0
-  dt_max_depth: None
+  dt_max_depth: 10
 
 
 # svr dt gpr
+# ridge

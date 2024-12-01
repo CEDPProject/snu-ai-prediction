@@ -53,7 +53,6 @@ def main(cfg):
     if accelerator.is_local_main_process:
         _logger.info('Device: {}'.format(accelerator.device))
     
-
     # load and define dataloader
     trn_dataloader, val_dataloader, tst_dataloader, features, scaler_dict = create_dataloader(
                                                 datadir                  = cfg.DATASET.datadir,
@@ -70,6 +69,8 @@ def main(cfg):
                                                 lead_time_align          = cfg.DATASET.lead_time_align,
                                                 split_rate               = cfg.DATASET.split_rate,
                                                 align_time               = cfg.DATASET.align_time,
+                                                target                   = cfg.DATASET.target,
+                                                model_name               = cfg.MODEL.modelname,
                                                 )
     
     # update cfg
@@ -104,9 +105,16 @@ def main(cfg):
     if 'ML' in cfg.MODEL.modelname:
         # ML Model Training
         _logger.info('Training ML Model...')
+        model_dict = training_ml(model, 
+                                cfg.DATASET.batch_size,
+                                trn_dataloader, 
+                                eval_merge_grp = True, 
+                                category_name = cfg.DATASET.category_name)
         
-        model_dict = training_ml(model, trn_dataloader, True, cfg.DATASET.category_name)
-        test_metrics = test_ml(model_dict, tst_dataloader, True, cfg.DATASET.category_name)
+        test_metrics = test_ml(model_dict, 
+                                tst_dataloader, 
+                                eval_merge_grp = True, 
+                                category_name = cfg.DATASET.category_name)
         
     else:
         # load weights

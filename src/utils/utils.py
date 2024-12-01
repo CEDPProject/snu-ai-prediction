@@ -8,8 +8,6 @@ import glob
 import json
 import shutil
 import random
-from sklearn.metrics import accuracy_score, f1_score, recall_score, precision_score
-
 
 def RSE(pred, true):
     return np.sqrt(np.sum((true - pred) ** 2)) / np.sqrt(np.sum((true - true.mean()) ** 2))
@@ -52,19 +50,6 @@ def cal_metric(pred, true):
                    'RSE': rse}
     
     print('mse: {:.4f}\t mae: {:.4f}\t mape: {:.4f}'.format(mse, mae, mape))
-    return metric_dict
-
-def cal_classification_metric(pred, true):
-    accuracy = accuracy_score(true, pred)
-    f1 = f1_score(true, pred)
-    recall = recall_score(true, pred)
-    precision = precision_score(true, pred)
-    metric_dict = {
-        'accuracy': accuracy,
-        'f1' : f1,
-        'recall' : recall,
-        'precision' : precision
-    }
     return metric_dict
 
 def version_build(accelerator, logdir: str, resume: int=None) -> str:

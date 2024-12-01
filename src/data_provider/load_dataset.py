@@ -15,6 +15,7 @@ def load_dataset(
                 scale: str,
                 input_structure: str,
                 data_version: str = 'version2_241107',
+                target: str = 'power',
                 align_time: bool = True,
                 pre_training: bool = False,
                 lead_time_align: bool = False,
@@ -43,8 +44,15 @@ def load_dataset(
             # 'ECMWF': pd.read_csv(os.path.join(base_path, "풍력발전단지_ECMWF_수치예보데이터.csv")),
             # 'LDAPS': pd.read_csv(os.path.join(base_path, "풍력발전단지_LDAPS_수치예보데이터.csv")),
         }
-
-    ground_truth = data_dict['real_power'].drop(columns=['NAME'])
+    
+    # Ground Truth 설정
+    if target == 'power':
+        ground_truth = data_dict['real_power'].drop(columns=['NAME']).fillna(method='ffill')
+    elif target == 'weather':
+        ground_truth = data_dict['weather_forecast'].drop(columns=['HGT']).fillna(method='ffill')
+    elif target == 'both':
+        ground_truth = pd.merge(data_dict['real_power'], data_dict['weather_forecast'], on='TM', how='inner')
+        ground_truth = ground_truth.drop(columns=['NAME', 'HGT']).fillna(method='ffill')
     
     # 발전 호기 필터링
     data_dict['ECMWF'] = filtering_id(data_dict['ECMWF'], data_dict['location'], category_name)
@@ -69,19 +77,28 @@ def load_dataset(
     else:
         data_dict['ECMWF'] = [df.sort_values(by=["CRTN_TM", "FCST_TM"]).reset_index(drop=True) for df in data_dict['ECMWF']]
         data_dict['LDAPS'] = [df.sort_values(by=["CRTN_TM", "FCST_TM"]).reset_index(drop=True) for df in data_dict['LDAPS']]
-    
+
     # 데이터 Input 구조 설정 및 Train/val/test 분할, 전처리
-    data_dict, scaler_dict = split_processing(data_dict, 
+    data_dict, scaler_dict = split_processing(data_dict, ground_truth,
                                     input_structure = input_structure, 
                                     split_rate      = split_rate, 
                                     scale           = scale, 
                                     pre_training    = pre_training)
     
-    features = data_dict['ECMWF']['5375']['train'].columns
-    print(f"ECMWF 발전단지 호기 수: {len(data_dict['ECMWF'])} | LDAPS 발전단지 호기 수: {len(data_dict['LDAPS'])}")
-    print(f"Train length: {len(data_dict['ECMWF']['5375']['train'])} | Val length: {len(data_dict['ECMWF']['5375']['val'])} | Test length: {len(data_dict['ECMWF']['5375']['test'])}")
-    
-    return data_dict, ground_truth, features, scaler_dict
+    for key in ['ECMWF', 'LDAPS']:
+        if key in data_dict:
+            print(f"{key} 발전단지 호기 수: {len(data_dict[key])}")
+            
+            for area_id, area_data in data_dict[key].items():
+                train_x_len = len(area_data['train_x'])
+                val_x_len = len(area_data['val_x'])
+                test_x_len = len(area_data['test_x'])
+
+                # feature 정보 도출
+                features = area_data['train_x'].columns
+                print(f"{key} - 호기 {area_id}:")
+                print(f"  Train length: {train_x_len} | Validation length: {val_x_len} | Test length: {test_x_len}")
+    return data_dict, features, scaler_dict
 
 
 # 발전 호기 필터링
@@ -130,34 +147,8 @@ def process_and_sort_dfs(dfs):
         processed_dfs.append(df)
     return processed_dfs
 
-
-def split_processing(data_dict, test_size=0.2, random_state=42):
-    result_dict = {}
-
-    for key, df_list in data_dict.items():
-        result_dict[key] = []
-        
-        for df in df_list:
-            train_df, test_df = train_test_split(df, test_size=test_size, random_state=random_state)
-            scaler = MinMaxScaler(feature_range=(0, 1))
-            
-            train_df_normalized = train_df.copy()
-            test_df_normalized = test_df.copy()
-            
-            cols_to_normalize = df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
-            
-            train_df_normalized[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize])
-            test_df_normalized[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize])
-            
-            result_dict[key].append({
-                'train': train_df_normalized,
-                'test': test_df_normalized,
-                'scaler': scaler
-            })
-    return result_dict
-
-# 데이터 Input 구조 설정 및 Train/val/test 분할, 전처리
 def split_processing(data_dict, 
+                     ground_truth,
                      input_structure='independence', 
                      split_rate=[0.8, 0.1, 0.1], 
                      scale='minmax', 
@@ -182,9 +173,15 @@ def split_processing(data_dict,
             
             for df in df_list:
                 area_grp_ids = df['AREA_GRP_ID'].unique()
-                
                 for area_grp_id in area_grp_ids:
                     area_df = df[df['AREA_GRP_ID'] == area_grp_id].copy()
+                    y_area_df = filter_ground_truth_by_area(ground_truth, area_grp_id)
+                    
+                    # y값 생성: FCST_TM과 ground_truth의 TM을 매칭
+                    y_data = y_area_df.loc[y_area_df['TM'].isin(area_df['FCST_TM'])]
+                    y_data = y_data.set_index('TM').reindex(area_df['FCST_TM']).reset_index()
+                    # y_values = y_data.drop(columns=['FCST_TM']).values
+                    y_values = y_data
                     
                     scaler = scaler_type  # 각 그룹마다 새로운 스케일러 생성
                     cols_to_normalize = area_df.columns.difference(['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'])
@@ -193,23 +190,33 @@ def split_processing(data_dict,
                         # Pre-training: Train 데이터만 사용
                         train_df = area_df.copy()
                         train_df[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
-                        result_dict[key][str(area_grp_id)] = {'train': train_df, 'scaler': scaler}
+                        result_dict[key][str(area_grp_id)] = {
+                            'train_x': train_df.drop(columns=['FCST_TM', 'CRTN_TM'], errors='ignore'),
+                            'train_y': y_values.drop(columns=['FCST_TM'], errors='ignore'),
+                            'scaler': scaler
+                        }
                     else:
                         # Train/Validation/Test Split
                         train_size = split_rate[0]
                         val_size = split_rate[1] / (1 - train_size)  # Validation 비율 조정
                         
-                        train_df, temp_df = train_test_split(area_df, test_size=1-train_size, random_state=random_state, shuffle=False)
-                        val_df, test_df = train_test_split(temp_df, test_size=1-val_size, random_state=random_state, shuffle=False)
+                        train_df, temp_df, train_y, temp_y = train_test_split(
+                            area_df, y_values, test_size=1-train_size, random_state=random_state, shuffle=False)
+                        
+                        val_df, test_df, val_y, test_y = train_test_split(
+                            temp_df, temp_y, test_size=1-val_size, random_state=random_state, shuffle=False)
                         
                         train_df[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
                         val_df[cols_to_normalize] = scaler.transform(val_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
                         test_df[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
                         
                         result_dict[key][str(area_grp_id)] = {
-                            'train': train_df,
-                            'val': val_df,
-                            'test': test_df,
+                            'train_x': train_df.drop(columns=['FCST_TM', 'CRTN_TM'], errors='ignore'),
+                            'train_y': train_y.drop(columns=['FCST_TM'], errors='ignore'),
+                            'val_x': val_df.drop(columns=['FCST_TM', 'CRTN_TM'], errors='ignore'),
+                            'val_y': val_y.drop(columns=['FCST_TM'], errors='ignore'),
+                            'test_x': test_df.drop(columns=['FCST_TM', 'CRTN_TM'], errors='ignore'),
+                            'test_y': test_y.drop(columns=['FCST_TM'], errors='ignore'),
                             'scaler': scaler
                         }
                     
@@ -222,7 +229,14 @@ def split_processing(data_dict,
         
         for ecmwf_df, ldaps_df in merged_list:
             merged_df = pd.merge(ecmwf_df, ldaps_df, on=['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'], suffixes=('_ecmwf', '_ldaps'))
+            y_area_df = filter_ground_truth_by_area(ground_truth, area_grp_id)
             
+            # y값 생성: FCST_TM과 ground_truth의 TM을 매칭
+            y_data = y_area_df.loc[y_area_df['TM'].isin(area_df['FCST_TM'])]
+            y_data = y_data.set_index('TM').reindex(area_df['FCST_TM']).reset_index()
+            # y_values = y_data.drop(columns=['FCST_TM']).values
+            y_values = y_data
+
             area_grp_ids = merged_df['AREA_GRP_ID'].unique()
             
             for area_grp_id in area_grp_ids:
@@ -234,24 +248,34 @@ def split_processing(data_dict,
                 if pre_training:
                     train_df = area_df.copy()
                     train_df[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
-                    result_dict['merged'][str(area_grp_id)] = {'train': train_df, 'scaler': scaler}
+                    result_dict['merged'][str(area_grp_id)] = {
+                        'train_x': train_df.drop(columns=['FCST_TM', 'CRTN_TM'], errors='ignore'),
+                        'train_y': y_values.drop(columns=['FCST_TM'], errors='ignore'),
+                        'scaler': scaler
+                    }
                 else:
                     train_size = split_rate[0]
                     val_size = split_rate[1] / (1 - train_size)
                     
-                    train_df, temp_df = train_test_split(area_df, test_size=1-train_size, random_state=random_state, shuffle=False)
-                    val_df, test_df = train_test_split(temp_df, test_size=1-val_size, random_state=random_state, shuffle=False)
+                    train_df, temp_df, train_y, temp_y = train_test_split(
+                        area_df, y_values, test_size=1-train_size, random_state=random_state, shuffle=False)
+                    
+                    val_df, test_df, val_y, test_y = train_test_split(
+                        temp_df, temp_y, test_size=1-val_size, random_state=random_state, shuffle=False)
                     
                     train_df[cols_to_normalize] = scaler.fit_transform(train_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
                     val_df[cols_to_normalize] = scaler.transform(val_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
                     test_df[cols_to_normalize] = scaler.transform(test_df[cols_to_normalize]) ** (2 if scale == 'minmax_square' else 1)
                     
                     result_dict['merged'][str(area_grp_id)] = {
-                        'train': train_df,
-                        'val': val_df,
-                        'test': test_df,
-                        'scaler': scaler
-                    }
+                            'train_x': train_df.drop(columns=['FCST_TM', 'CRTN_TM'], errors='ignore'),
+                            'train_y': train_y.drop(columns=['FCST_TM'], errors='ignore'),
+                            'val_x': val_df.drop(columns=['FCST_TM', 'CRTN_TM'], errors='ignore'),
+                            'val_y': val_y.drop(columns=['FCST_TM'], errors='ignore'),
+                            'test_x': test_df.drop(columns=['FCST_TM', 'CRTN_TM'], errors='ignore'),
+                            'test_y': test_y.drop(columns=['FCST_TM'], errors='ignore'),
+                            'scaler': scaler
+                        }
                 
                 # 스케일러 저장
                 scaler_dict[('merged', str(area_grp_id))] = scaler
@@ -259,3 +283,18 @@ def split_processing(data_dict,
         raise ValueError("Mode should be either 'independence' or 'merge'")
     
     return result_dict, scaler_dict
+
+def filter_ground_truth_by_area(ground_truth, area_grp_id):
+    # Extract the prefix if area_grp_id contains underscores
+    if isinstance(area_grp_id, str) and '_' in area_grp_id:
+        area_grp_id_prefix = area_grp_id.split('_')[0]
+    else:
+        area_grp_id_prefix = area_grp_id
+
+    # Filter the DataFrame using the extracted prefix
+    filtered_df = ground_truth[ground_truth['ID'].astype(str) == str(area_grp_id_prefix)].copy()
+
+    if filtered_df.empty:
+        raise ValueError(f"No matching rows found in ground_truth for area_grp_id={area_grp_id_prefix}")
+    
+    return filtered_df
