@@ -98,6 +98,7 @@ def load_dataset(
                 features = area_data['train_x'].columns
                 print(f"{key} - 호기 {area_id}:")
                 print(f"  Train length: {train_x_len} | Validation length: {val_x_len} | Test length: {test_x_len}")
+                
     return data_dict, features, scaler_dict
 
 

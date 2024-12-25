@@ -9,7 +9,7 @@ import torch
 from omegaconf import OmegaConf
 
 from exp_builder_dl import training_dl, test_dl
-from exp_builder_ml import training_ml, test_ml
+from exp_builder_ml import training_ml, test_ml, training_ml_pycaret, test_ml_pycaret
 from data_provider import create_dataloader
 from losses import create_criterion
 from optimizers import create_optimizer
@@ -85,11 +85,14 @@ def main(cfg):
         OmegaConf.save(cfg, os.path.join(savedir, 'configs.yaml'))
         print(OmegaConf.to_yaml(cfg))
     
-    # build Model
-    model = create_model(
-        modelname    = cfg.MODEL.modelname,
-        params       = cfg.MODELSETTING
-        )
+    if cfg.MODEL.modelname != 'MLpycaret':
+        # build Model
+        model = create_model(
+            modelname    = cfg.MODEL.modelname,
+            params       = cfg.MODELSETTING
+            )
+        
+        _logger.info('Model name: {}'.format(model))
     
     # wandb
     if cfg.TRAIN.wandb.use:
@@ -100,22 +103,34 @@ def main(cfg):
                    entity  = cfg.TRAIN.wandb.entity, 
                    config  = OmegaConf.to_container(cfg))
         
-    _logger.info('Model name: {}'.format(model))
-
     if 'ML' in cfg.MODEL.modelname:
         # ML Model Training
         _logger.info('Training ML Model...')
-        model_dict = training_ml(model, 
-                                trn_dataloader, 
-                                cfg.DATASET.batch_size,
-                                eval_merge_grp = True, 
-                                category_name = cfg.DATASET.category_name)
-        
-        test_metrics = test_ml(model_dict, 
-                                tst_dataloader, 
-                                eval_merge_grp = True, 
-                                category_name = cfg.DATASET.category_name)
-        
+        if cfg.MODEL.modelname == 'MLpycaret':
+            model_dict = training_ml_pycaret(
+                                    trn_dataloader,
+                                    selected_models = cfg.MODELSETTING.selected_models,
+                                    eval_merge_grp = True, 
+                                    category_name = cfg.DATASET.category_name,
+                                    fold = 5
+                                    )
+            
+            test_metrics = test_ml_pycaret(model_dict, 
+                                    tst_dataloader, 
+                                    save_dir = savedir,
+                                    eval_merge_grp = True)
+            _logger.info('Pycaret done!')
+            exit()
+        else:
+            model_dict = training_ml(model, 
+                                    trn_dataloader,
+                                    eval_merge_grp = True, 
+                                    category_name = cfg.DATASET.category_name)
+            
+            test_metrics = test_ml(model_dict, 
+                                    tst_dataloader, 
+                                    eval_merge_grp = True, 
+                                    category_name = cfg.DATASET.category_name)
     else:
         # load weights
         if cfg.TRAIN.resume is not None:

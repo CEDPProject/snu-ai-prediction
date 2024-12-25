@@ -18,7 +18,7 @@ def parser():
     # load configs
     cfg = OmegaConf.load(args.default_cfg)
     cfg = OmegaConf.merge(cfg, {'MODEL':{'modelname' : args.model_name}})
-
+    
     if args.model_cfg:
         model_cfg = OmegaConf.load(args.model_cfg)
         modelname = args.model_name
@@ -30,7 +30,7 @@ def parser():
             cfg = OmegaConf.merge(cfg, {'MODELSETTING' : model_setting_conf})
         else:
             print(f"Model '{modelname}' not found in the model_config.")
-            return None
+            return cfg
 
     # update cfg
     for k, v in zip(args.opts[0::2], args.opts[1::2]):

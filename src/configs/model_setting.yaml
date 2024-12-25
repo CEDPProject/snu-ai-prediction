@@ -13,6 +13,7 @@ MLModelEnsemble:
   svr_C: 1.0
   dt_max_depth: 10
 
+MLpycaret:
+  selected_models: ['svm', 'lr', 'ridge', 'br', 'huber', 'rf', 'et', 'gbr', 'lightgbm', 'mlp']
 
-# svr dt gpr
-# ridge
+# lr lasso ridge en lar llar omp br ard par ransac tr huber kr svm knn dt rf et ada gbr mlp lightgbm dummy
