@@ -14,6 +14,9 @@ MLModelEnsemble:
   dt_max_depth: 10
 
 MLpycaret:
-  selected_models: ['svm', 'lr', 'ridge', 'br', 'huber', 'rf', 'et', 'gbr', 'lightgbm', 'mlp']
+  selected_models: ['lr']
+  enable_tuning: True
+  tuning_iter: 10
 
+# ['svm', 'dt', 'lr', 'ridge', 'br', 'huber', 'rf', 'et', 'gbr', 'lightgbm', 'mlp'] ['rf', 'et', 'gbr', 'lightgbm']
 # lr lasso ridge en lar llar omp br ard par ransac tr huber kr svm knn dt rf et ada gbr mlp lightgbm dummy

@@ -122,11 +122,17 @@ def test_ml(model_dict, tst_loader, eval_merge_grp=False, category_name=None):
 
     return results
 
-
-def training_ml_pycaret(trn_loader, selected_models = None, eval_merge_grp=False, category_name=None, fold=5, save_dir='./saved_model/'):
+def training_ml_pycaret(
+    trn_loader,
+    selected_models=None,
+    fold=5,
+    save_dir='./saved_model/',
+    enable_tuning=True,  # 하이퍼파라미터 튜닝 옵션 추가
+    tuning_iter=10  # 튜닝 반복 횟수 설정
+):
     """
     Train specified machine learning models using PyCaret for each dataset combination in the training loader.
-    Record the performance of all models and save the results.
+    Optionally perform hyperparameter tuning for each model and save all hyperparameter configurations and results.
     """
     
     all_model_results = []  # List to store all model performance
@@ -153,23 +159,46 @@ def training_ml_pycaret(trn_loader, selected_models = None, eval_merge_grp=False
 
             # Get available models
             available_models = models()
-
             if selected_models is None:
                 model_list = available_models.index.tolist()  # Use all available models
             else:
                 model_list = [m for m in selected_models if m in available_models.index]  # Filter by selected models
 
-            # Train specified models and store their performance
+            # Train specified models, optionally tune their hyperparameters, and store their performance
             for model_name in model_list:
                 model_desc = available_models.loc[model_name]
                 print(f"Training model: {model_name} ({model_desc['Name']})")
-                trained_model = create_model(model_name, verbose=False)  # Train the model
-                model_results = pull()  # Get the performance metrics
+                
+                # Train the model
+                trained_model = create_model(model_name, verbose=False)
+                tuned_params = None  # Default for cases without tuning
+                
+                if enable_tuning:
+                    # Perform hyperparameter tuning
+                    print(f"Tuning model: {model_name}...")
+                    tuned_model = tune_model(trained_model, verbose=False, n_iter=tuning_iter)
+                    # Extract tuned hyperparameters
+                    tuned_params = tuned_model.get_params()
+                    final_model = tuned_model
+                else:
+                    final_model = trained_model
+
+                # Get the performance metrics
+                model_results = pull().to_dict(orient="records")[0]  # Convert PyCaret pull() result to dict
+
+                # Save individual tuned parameters and performance
                 model_results['model_key'] = model_key
                 model_results['area_grp_id'] = area_grp_id
                 model_results['model_name'] = model_name
+                model_results['tuned_params'] = str(tuned_params)  # Convert tuned_params to string for saving
                 all_model_results.append(model_results)  # Append results
-                all_trained_models[(model_key, area_grp_id, model_name)] = trained_model  # Store model
+
+                # Store the final model
+                all_trained_models[(model_key, area_grp_id, model_name, str(tuned_params))] = final_model
+
+    # Combine all model results into a single DataFrame
+    results_df = pd.DataFrame(all_model_results)
+    results_df.to_csv(f'{save_dir}/training_results_with_tuning.csv', index=False)
 
     return all_trained_models
 
@@ -184,7 +213,7 @@ def test_ml_pycaret(
 ):
     """
     Test trained PyCaret models on given test data and calculate metrics.
-    Record predictions and save the results, including MSE, MAE, and MAPE for each model and group.
+    Record predictions and save the results, including MSE, MAE, MAPE, and tuned hyperparameters for each model and group.
     """
     metrics_results = []  # List to store metrics for all models
     grouped_metrics = defaultdict(lambda: defaultdict(list))  # Store predictions per group and model
@@ -199,7 +228,7 @@ def test_ml_pycaret(
             test_data = pd.concat([test_x, test_y], axis=1)
 
             # Test all models trained for this group
-            for (m_key, a_grp_id, model_name), trained_model in all_trained_models.items():
+            for (m_key, a_grp_id, model_name, tuned_params), trained_model in all_trained_models.items():
                 if (m_key, a_grp_id) == (model_key, area_grp_id):
                     print(f"Testing model: {model_name} for ({model_key}, {area_grp_id})")
                     predictions = predict_model(trained_model, data=test_data, verbose=False)
@@ -208,44 +237,20 @@ def test_ml_pycaret(
                     pred_values = predictions["prediction_label"].values
                     true_values = predictions[target_column].values
 
-                    if eval_merge_grp:
-                        # Group predictions by group_key and model_name
-                        group_key = area_grp_id.split('_')[0]  # Example: "8711_001" → "8711"
-                        grouped_metrics[group_key][model_name].append((pred_values, true_values))
-                    else:
-                        # Calculate metrics directly for this model
-                        metrics = cal_metric(pred=pred_values, true=true_values)
-                        metrics_results.append({
-                            'model_key': model_key,
-                            'area_grp_id': area_grp_id,
-                            'model_name': model_name,
-                            'MSE': metrics['MSE'],
-                            'MAE': metrics['MAE'],
-                            'MAPE': metrics['MAPE']
-                        })
-
-    # Process grouped metrics if grouping is enabled
-    if eval_merge_grp:
-        print("Calculating grouped metrics with merged predictions...")
-        for group_key, model_entries in grouped_metrics.items():
-            for model_name, pred_true_pairs in model_entries.items():
-                # Concatenate all predictions and truths for this model and group
-                all_predictions = np.concatenate([pair[0] for pair in pred_true_pairs])
-                all_truths = np.concatenate([pair[1] for pair in pred_true_pairs])
-
-                # Calculate merged metrics
-                metrics = cal_metric(pred=all_predictions, true=all_truths)
-                metrics_results.append({
-                    'group_key': group_key,
-                    'model_name': model_name,
-                    'MSE': metrics['MSE'],
-                    'MAE': metrics['MAE'],
-                    'MAPE': metrics['MAPE']
-                })
+                    # Calculate metrics directly for this model
+                    metrics = cal_metric(pred=pred_values, true=true_values)
+                    metrics_results.append({
+                        'model_key': model_key,
+                        'area_grp_id': area_grp_id,
+                        'model_name': model_name,
+                        'MSE': metrics['MSE'],
+                        'MAE': metrics['MAE'],
+                        'MAPE': metrics['MAPE'],
+                        'tuned_params': tuned_params  # Save tuned hyperparameters
+                    })
 
     # Save metrics
     metrics_results_df = pd.DataFrame(metrics_results)
-    metrics_results_df.to_csv(f'{save_dir}/merged_metrics.csv', index=False)
-    print(f"Saved merged metrics to {save_dir}/merged_metrics.csv")
+    metrics_results_df.to_csv(f'{save_dir}/test_results_with_tuning.csv', index=False)
 
     return metrics_results_df

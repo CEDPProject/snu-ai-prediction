@@ -110,11 +110,11 @@ def main(cfg):
             model_dict = training_ml_pycaret(
                                     trn_dataloader,
                                     selected_models = cfg.MODELSETTING.selected_models,
-                                    eval_merge_grp = True, 
-                                    category_name = cfg.DATASET.category_name,
-                                    fold = 5
+                                    fold = 5,
+                                    save_dir = savedir,
+                                    enable_tuning=cfg.MODELSETTING.enable_tuning,
+                                    tuning_iter=cfg.MODELSETTING.tuning_iter
                                     )
-            
             test_metrics = test_ml_pycaret(model_dict, 
                                     tst_dataloader, 
                                     save_dir = savedir,
