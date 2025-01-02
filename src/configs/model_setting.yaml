@@ -14,9 +14,9 @@ MLModelEnsemble:
   dt_max_depth: 10
 
 MLpycaret:
-  selected_models: ['rf', 'et', 'gbr', 'lightgbm']
+  selected_models: ['ridge']
   enable_tuning: True
-  tuning_iter: 15
+  tuning_iter: 2
   optimize_metric: 'MSE'
   search_library: 'optuna'
 

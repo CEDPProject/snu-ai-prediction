@@ -209,7 +209,6 @@ def training_ml_pycaret(
 
     return all_trained_models
 
-
 def test_ml_pycaret(
     all_trained_models,
     tst_loader,
@@ -223,7 +222,6 @@ def test_ml_pycaret(
     Record predictions and save the results, including MSE, MAE, MAPE, and tuned hyperparameters for each model and group.
     """
     metrics_results = []  # List to store metrics for all models
-    grouped_metrics = defaultdict(lambda: defaultdict(list))  # Store predictions per group and model
 
     for idx, (model_key, area_dict) in enumerate(tst_loader.items(), start=1):
         for area_grp_id, data_dict in area_dict.items():
@@ -256,8 +254,23 @@ def test_ml_pycaret(
                         'tuned_params': tuned_params  # Save tuned hyperparameters
                     })
 
-    # Save metrics
+    # Save individual results
     metrics_results_df = pd.DataFrame(metrics_results)
     metrics_results_df.to_csv(f'{save_dir}/test_results_with_tuning.csv', index=False)
 
-    return metrics_results_df
+    # Group by 'model_name' and 'area_grp_id', then average 'MSE', 'MAE', 'MAPE'
+    averaged_metrics = (
+        metrics_results_df.groupby(['model_name', 'area_grp_id'], as_index=False)
+        .agg({
+            'MSE': 'mean',
+            'MAE': 'mean',
+            'MAPE': 'mean',
+            'model_key': lambda x: ', '.join(set(x)),  # Combine unique model_key values as a string
+            'tuned_params': 'first'  # Keep one tuned_params (arbitrary choice if multiple exist)
+        })
+    )
+
+    # Save averaged results
+    averaged_metrics.to_csv(f'{save_dir}/test_results_with_tuning_averaged.csv', index=False)
+
+    return averaged_metrics
