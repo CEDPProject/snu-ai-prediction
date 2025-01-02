@@ -128,7 +128,9 @@ def training_ml_pycaret(
     fold=5,
     save_dir='./saved_model/',
     enable_tuning=True,  # 하이퍼파라미터 튜닝 옵션 추가
-    tuning_iter=10  # 튜닝 반복 횟수 설정
+    tuning_iter=10,  # 튜닝 반복 횟수 설정
+    optimize_metric='MSE',
+    search_library='optuna'
 ):
     """
     Train specified machine learning models using PyCaret for each dataset combination in the training loader.
@@ -176,7 +178,12 @@ def training_ml_pycaret(
                 if enable_tuning:
                     # Perform hyperparameter tuning
                     print(f"Tuning model: {model_name}...")
-                    tuned_model = tune_model(trained_model, verbose=False, n_iter=tuning_iter)
+                    tuned_model = tune_model(trained_model, 
+                                                verbose=False, 
+                                                n_iter=tuning_iter, 
+                                                optimize = optimize_metric,
+                                                search_library = search_library
+                                                )
                     # Extract tuned hyperparameters
                     tuned_params = tuned_model.get_params()
                     final_model = tuned_model

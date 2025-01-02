@@ -113,7 +113,9 @@ def main(cfg):
                                     fold = 5,
                                     save_dir = savedir,
                                     enable_tuning=cfg.MODELSETTING.enable_tuning,
-                                    tuning_iter=cfg.MODELSETTING.tuning_iter
+                                    tuning_iter=cfg.MODELSETTING.tuning_iter,
+                                    optimize_metric=cfg.MODELSETTING.optimize_metric,
+                                    search_library=cfg.MODELSETTING.search_library
                                     )
             test_metrics = test_ml_pycaret(model_dict, 
                                     tst_dataloader, 
