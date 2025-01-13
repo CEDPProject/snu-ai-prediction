@@ -6,6 +6,7 @@ from utils.utils import cal_metric
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from omegaconf import OmegaConf
 from sklearn.model_selection import ParameterGrid
+import os
 
 def merge_predictions(predictions, group_key, eval_merge_grp, category_name=None):
     """
@@ -133,26 +134,27 @@ def training_ml_pycaret(
     tuning_iter=10,  # 튜닝 반복 횟수 설정
     optimize_metric='MSE',
     search_library='optuna',
-    search_algorithm='random',
+    search_algorithm='random',  # 기본값은 'random'
     early_stopping=False,
-    n_jobs=8
+    n_jobs=8,
+    category_name='solar'
 ):
     """
     Train specified machine learning models using PyCaret for each dataset combination in the training loader.
-    Optionally perform hyperparameter tuning for each model and save all hyperparameter configurations and results.
+    Perform hyperparameter tuning (Grid Search or Random Search) and save all configurations and results.
     """
     
     all_model_results = []  # Store all model performance
     all_trained_models = {}  # Store all trained models
-    best_models = {}  # Store the best model for each dataset combination
+    all_grid_results = []
     grid_model = OmegaConf.to_container(grid_model, resolve=True)
     feature_names_dict = {}  # Dictionary to store feature names for each (model_key, area_grp_id)
 
     for idx, (model_key, area_dict) in enumerate(trn_loader.items(), start=1):
         for area_grp_id, data_dict in area_dict.items():
             print(f"Processing ({model_key}, {area_grp_id}) ({idx}/{len(trn_loader)})")
-            # Combine train_x and train_y into a single DataFrame
 
+            # Combine train_x and train_y into a single DataFrame
             train_x = data_dict['train_x']
             train_x = train_x.drop(columns=["AREA_GRP_ID"], errors="ignore")
             train_y = data_dict['train_y']['QGEN']
@@ -190,36 +192,93 @@ def training_ml_pycaret(
                 params = None  # Default for cases without tuning
                 
                 if enable_tuning:
-                    # Perform hyperparameter tuning
-                    print(f"Tuning model: {model_name}...")
-                    tuned_model = tune_model(trained_model, 
-                                                verbose=False, 
-                                                n_iter=tuning_iter, 
-                                                optimize=optimize_metric,
-                                                search_library=search_library,
-                                                search_algorithm=search_algorithm,
-                                                early_stopping=early_stopping
-                                                )
-                    
-                    # Extract tuned hyperparameters
-                    params = tuned_model.get_params()
-                    final_model = tuned_model
+                    if search_algorithm == 'grid':  # Grid Search
+                        print(f"Performing Grid Search for {model_name}...")
+                        if model_name not in grid_model:
+                            raise ValueError(f"No grid found for model: {model_name}")
+                        custom_grid = grid_model[model_name]
+
+                        # Ensure all values in custom_grid are lists
+                        custom_grid = {key: value if isinstance(value, list) else [value] for key, value in custom_grid.items()}
+
+                        # Generate all parameter combinations
+                        from sklearn.model_selection import ParameterGrid
+                        param_grid = list(ParameterGrid(custom_grid))
+
+                        # Track results for each parameter combination
+                        grid_results = []
+                        best_model = None
+                        best_score = float('inf') if optimize_metric in ['MSE', 'RMSE', 'MAE'] else float('-inf')
+                        best_params = None
+
+                        for params in param_grid:
+                            print(f"Testing parameters: {params}")
+                            params = {key: [value] if not isinstance(value, list) else value for key, value in params.items()}
+                            tuned_model = tune_model(
+                                trained_model,
+                                custom_grid=params,
+                                verbose=False,
+                                optimize=optimize_metric
+                            )
+
+                            # Get performance metrics
+                            model_results = pull().to_dict(orient="records")[0]
+                            model_results['params'] = params
+                            model_results['model_key'] = model_key
+                            model_results['area_grp_id'] = area_grp_id
+                            model_results['model_name'] = model_name
+                            all_grid_results.append(model_results)
+
+                            # Check for the best model
+                            current_score = model_results[optimize_metric]
+                            if (optimize_metric in ['MSE', 'RMSE', 'MAE'] and current_score < best_score) or \
+                               (optimize_metric not in ['MSE', 'RMSE', 'MAE'] and current_score > best_score):
+                                best_score = current_score
+                                best_model = tuned_model
+                                best_params = params
+
+                    elif search_algorithm == 'random':  # Random Search
+                        print(f"Performing Random Search for {model_name}...")
+                        tuned_model = tune_model(
+                            trained_model,
+                            custom_grid=grid_model.get(model_name, {}),
+                            verbose=False,
+                            n_iter=tuning_iter,
+                            optimize=optimize_metric,
+                            search_library=search_library,
+                            search_algorithm=search_algorithm,
+                            early_stopping=early_stopping
+                        )
+                        best_model = tuned_model
+                        best_params = tuned_model.get_params()
+
+                    final_model = best_model
                 else:
                     params = trained_model.get_params()
                     final_model = trained_model
 
                 # Get the performance metrics
                 model_results = pull().to_dict(orient="records")[0]  # Convert PyCaret pull() result to dict
-
-                # Save individual tuned parameters and performance
                 model_results['model_key'] = model_key
                 model_results['area_grp_id'] = area_grp_id
                 model_results['model_name'] = model_name
-                model_results['params'] = str(params)  # Convert params to string for saving
-                all_model_results.append(model_results)  # Append results
+                if enable_tuning:
+                    params = str(best_params)
+                    model_results['params'] = params
+                else:
+                    model_results['params'] = str('default')
+                all_model_results.append(model_results)
 
-                # Store the final model
-                all_trained_models[(model_key, area_grp_id, model_name, str(params))] = final_model
+                # Store the final trained model
+                all_trained_models[(model_key, area_grp_id, model_name, params)] = final_model
+
+    final_results_df = pd.DataFrame(all_grid_results)
+    final_results_df["params"] = final_results_df["params"].astype(str)
+    if category_name == 'wind':
+        final_results_df['area_grp_id'] = final_results_df['area_grp_id'].apply(lambda x: x.split('_')[0])
+    final_results_df = final_results_df[["area_grp_id", "model_name", "params", "MSE", "MAE", "MAPE", "RMSE", "R2", "RMSLE"]]
+    aggregated_df = final_results_df.groupby(["params", "area_grp_id", "model_name"]).mean().reset_index()
+    aggregated_df.to_csv(f'{save_dir}/grid_results.csv', index=False)
 
     # Combine all model results into a single DataFrame
     results_df = pd.DataFrame(all_model_results)
@@ -316,3 +375,4 @@ def test_ml_pycaret(
     averaged_metrics.to_csv(f'{save_dir}/test_results_with_tuning_averaged.csv', index=False)
 
     return averaged_metrics
+
