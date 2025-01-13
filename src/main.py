@@ -115,8 +115,11 @@ def main(cfg):
                                     enable_tuning=cfg.MODELSETTING.enable_tuning,
                                     tuning_iter=cfg.MODELSETTING.tuning_iter,
                                     optimize_metric=cfg.MODELSETTING.optimize_metric,
-                                    search_library=cfg.MODELSETTING.search_library
+                                    search_library=cfg.MODELSETTING.search_library,
+                                    search_algorithm=cfg.MODELSETTING.search_algorithm,
+                                    early_stopping=cfg.MODELSETTING.early_stopping,
                                     )
+            
             test_metrics = test_ml_pycaret(model_dict, 
                                     tst_dataloader, 
                                     save_dir = savedir,

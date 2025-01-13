@@ -14,11 +14,13 @@ MLModelEnsemble:
   dt_max_depth: 10
 
 MLpycaret:
-  selected_models: ['ridge']
+  selected_models: ['rf']
   enable_tuning: True
-  tuning_iter: 2
+  tuning_iter: 10
   optimize_metric: 'MSE'
-  search_library: 'optuna'
+  search_library: 'scikit-learn'
+  search_algorithm: 'random'
+  early_stopping: False
 
 # ['svm', 'dt', 'lr', 'ridge', 'br', 'huber', 'rf', 'et', 'gbr', 'lightgbm', 'mlp'] ['rf', 'et', 'gbr', 'lightgbm']
 # lr lasso ridge en lar llar omp br ard par ransac tr huber kr svm knn dt rf et ada gbr mlp lightgbm dummy
