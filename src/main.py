@@ -107,10 +107,9 @@ def main(cfg):
         # ML Model Training
         _logger.info('Training ML Model...')
         if cfg.MODEL.modelname == 'MLpycaret':
-            model_dict = training_ml_pycaret(
+            all_trained_models_dict, feature_names_dict = training_ml_pycaret(
                                     trn_dataloader,
                                     selected_models = cfg.MODELSETTING.selected_models,
-                                    fold = 5,
                                     save_dir = savedir,
                                     enable_tuning=cfg.MODELSETTING.enable_tuning,
                                     tuning_iter=cfg.MODELSETTING.tuning_iter,
@@ -118,12 +117,17 @@ def main(cfg):
                                     search_library=cfg.MODELSETTING.search_library,
                                     search_algorithm=cfg.MODELSETTING.search_algorithm,
                                     early_stopping=cfg.MODELSETTING.early_stopping,
+                                    n_jobs=cfg.MODELSETTING.n_jobs,
+                                    grid_model=cfg.MODELSETTING.model_grids,
+                                    k_fold_num=cfg.MODELSETTING.k_fold_num,
                                     )
             
-            test_metrics = test_ml_pycaret(model_dict, 
+            test_metrics = test_ml_pycaret(all_trained_models_dict, 
                                     tst_dataloader, 
+                                    feature_names_dict,
                                     save_dir = savedir,
-                                    eval_merge_grp = True)
+                                    eval_merge_grp = True, 
+                                    category_name = cfg.DATASET.category_name)
             _logger.info('Pycaret done!')
             exit()
         else:

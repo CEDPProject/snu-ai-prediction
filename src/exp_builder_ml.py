@@ -4,7 +4,8 @@ import numpy as np
 from collections import defaultdict
 from utils.utils import cal_metric
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-
+from omegaconf import OmegaConf
+from sklearn.model_selection import ParameterGrid
 
 def merge_predictions(predictions, group_key, eval_merge_grp, category_name=None):
     """
@@ -124,50 +125,61 @@ def test_ml(model_dict, tst_loader, eval_merge_grp=False, category_name=None):
 
 def training_ml_pycaret(
     trn_loader,
+    grid_model,
     selected_models=None,
-    fold=5,
+    k_fold_num=5,
     save_dir='./saved_model/',
     enable_tuning=True,  # 하이퍼파라미터 튜닝 옵션 추가
     tuning_iter=10,  # 튜닝 반복 횟수 설정
     optimize_metric='MSE',
     search_library='optuna',
     search_algorithm='random',
-    early_stopping=False
+    early_stopping=False,
+    n_jobs=8
 ):
     """
     Train specified machine learning models using PyCaret for each dataset combination in the training loader.
     Optionally perform hyperparameter tuning for each model and save all hyperparameter configurations and results.
     """
     
-    all_model_results = []  # List to store all model performance
-    all_trained_models = {}  # Dictionary to store all trained models
+    all_model_results = []  # Store all model performance
+    all_trained_models = {}  # Store all trained models
+    best_models = {}  # Store the best model for each dataset combination
+    grid_model = OmegaConf.to_container(grid_model, resolve=True)
+    feature_names_dict = {}  # Dictionary to store feature names for each (model_key, area_grp_id)
 
     for idx, (model_key, area_dict) in enumerate(trn_loader.items(), start=1):
         for area_grp_id, data_dict in area_dict.items():
             print(f"Processing ({model_key}, {area_grp_id}) ({idx}/{len(trn_loader)})")
-
             # Combine train_x and train_y into a single DataFrame
+
             train_x = data_dict['train_x']
+            train_x = train_x.drop(columns=["AREA_GRP_ID"], errors="ignore")
             train_y = data_dict['train_y']['QGEN']
             train_data = pd.concat([train_x, train_y], axis=1)
+
+            # Save feature names for this group
+            feature_names_dict[(model_key, area_grp_id)] = train_x.columns.tolist()
 
             # Set up PyCaret for regression
             print(f"Setting up PyCaret for ({model_key}, {area_grp_id})...")
             reg_setup = setup(
                 data=train_data,
                 target='QGEN',
-                fold=fold,
+                fold=k_fold_num,
                 verbose=False,
-                html=False
+                html=False,
+                n_jobs=n_jobs,
+                session_id=42 
             )
-
+            
             # Get available models
             available_models = models()
             if selected_models is None:
                 model_list = available_models.index.tolist()  # Use all available models
             else:
                 model_list = [m for m in selected_models if m in available_models.index]  # Filter by selected models
-
+            
             # Train specified models, optionally tune their hyperparameters, and store their performance
             for model_name in model_list:
                 model_desc = available_models.loc[model_name]
@@ -175,7 +187,7 @@ def training_ml_pycaret(
                 
                 # Train the model
                 trained_model = create_model(model_name, verbose=False)
-                tuned_params = None  # Default for cases without tuning
+                params = None  # Default for cases without tuning
                 
                 if enable_tuning:
                     # Perform hyperparameter tuning
@@ -183,16 +195,17 @@ def training_ml_pycaret(
                     tuned_model = tune_model(trained_model, 
                                                 verbose=False, 
                                                 n_iter=tuning_iter, 
-                                                optimize = optimize_metric,
-                                                search_library = search_library,
-                                                search_algorithm = search_algorithm,
-                                                early_stopping = early_stopping
+                                                optimize=optimize_metric,
+                                                search_library=search_library,
+                                                search_algorithm=search_algorithm,
+                                                early_stopping=early_stopping
                                                 )
                     
                     # Extract tuned hyperparameters
-                    tuned_params = tuned_model.get_params()
+                    params = tuned_model.get_params()
                     final_model = tuned_model
                 else:
+                    params = trained_model.get_params()
                     final_model = trained_model
 
                 # Get the performance metrics
@@ -202,25 +215,26 @@ def training_ml_pycaret(
                 model_results['model_key'] = model_key
                 model_results['area_grp_id'] = area_grp_id
                 model_results['model_name'] = model_name
-                model_results['tuned_params'] = str(tuned_params)  # Convert tuned_params to string for saving
+                model_results['params'] = str(params)  # Convert params to string for saving
                 all_model_results.append(model_results)  # Append results
 
                 # Store the final model
-                all_trained_models[(model_key, area_grp_id, model_name, str(tuned_params))] = final_model
+                all_trained_models[(model_key, area_grp_id, model_name, str(params))] = final_model
 
     # Combine all model results into a single DataFrame
     results_df = pd.DataFrame(all_model_results)
     results_df.to_csv(f'{save_dir}/training_results_with_tuning.csv', index=False)
 
-    return all_trained_models
+    return all_trained_models, feature_names_dict
 
 def test_ml_pycaret(
     all_trained_models,
     tst_loader,
+    feature_names_dict,
     target_column="QGEN",
-    eval_merge_grp=False,
-    category_name=None,
     save_dir="./saved_model/",
+    eval_merge_grp = True,
+    category_name = 'solar'
 ):
     """
     Test trained PyCaret models on given test data and calculate metrics.
@@ -231,14 +245,30 @@ def test_ml_pycaret(
     for idx, (model_key, area_dict) in enumerate(tst_loader.items(), start=1):
         for area_grp_id, data_dict in area_dict.items():
             print(f"Testing ({model_key}, {area_grp_id}) ({idx}/{len(tst_loader)})")
-
+            
             # Combine test_x and test_y into a single DataFrame
             test_x = data_dict["test_x"]
+            test_x = test_x.drop(columns=["AREA_GRP_ID"], errors="ignore")
             test_y = data_dict["test_y"][target_column]
+            
+            # Align test features with training features
+            expected_features = feature_names_dict.get((model_key, area_grp_id), [])
+            for feature in expected_features:
+                if feature not in test_x.columns:
+                    test_x[feature] = 0  # Add missing feature with default value
+                    
+                # Remove extra features
+            extra_features = set(test_x.columns) - set(expected_features)
+            if extra_features:
+                test_x = test_x.drop(columns=list(extra_features))
+
+            # Reorder columns to match training features
+            test_x = test_x[expected_features]
+
             test_data = pd.concat([test_x, test_y], axis=1)
 
             # Test all models trained for this group
-            for (m_key, a_grp_id, model_name, tuned_params), trained_model in all_trained_models.items():
+            for (m_key, a_grp_id, model_name, params), trained_model in all_trained_models.items():
                 if (m_key, a_grp_id) == (model_key, area_grp_id):
                     print(f"Testing model: {model_name} for ({model_key}, {area_grp_id})")
                     predictions = predict_model(trained_model, data=test_data, verbose=False)
@@ -256,22 +286,29 @@ def test_ml_pycaret(
                         'MSE': metrics['MSE'],
                         'MAE': metrics['MAE'],
                         'MAPE': metrics['MAPE'],
-                        'tuned_params': tuned_params  # Save tuned hyperparameters
+                        'params': params  # Save tuned hyperparameters
                     })
 
     # Save individual results
     metrics_results_df = pd.DataFrame(metrics_results)
     metrics_results_df.to_csv(f'{save_dir}/test_results_with_tuning.csv', index=False)
 
-    # Group by 'model_name' and 'area_grp_id', then average 'MSE', 'MAE', 'MAPE'
+    # Check if category_name is 'wind' and extract prefix if needed
+    if category_name == 'wind':
+        metrics_results_df['area_grp_prefix'] = metrics_results_df['area_grp_id'].apply(lambda x: x.split('_')[0])
+        group_column = 'area_grp_prefix'
+    else:
+        group_column = 'area_grp_id'
+
+    # Group by 'model_name' and the appropriate group column
     averaged_metrics = (
-        metrics_results_df.groupby(['model_name', 'area_grp_id'], as_index=False)
+        metrics_results_df.groupby(['model_name', group_column], as_index=False)
         .agg({
             'MSE': 'mean',
             'MAE': 'mean',
             'MAPE': 'mean',
-            'model_key': lambda x: ', '.join(set(x)),  # Combine unique model_key values as a string
-            'tuned_params': 'first'  # Keep one tuned_params (arbitrary choice if multiple exist)
+            'model_key': lambda x: ', '.join(set(x)),
+            'params': 'first'
         })
     )
 

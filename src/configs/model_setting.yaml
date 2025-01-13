@@ -14,13 +14,57 @@ MLModelEnsemble:
   dt_max_depth: 10
 
 MLpycaret:
-  selected_models: ['rf']
-  enable_tuning: True
+  selected_models: ['xgboost']
+  enable_tuning: False
   tuning_iter: 10
   optimize_metric: 'MSE'
   search_library: 'scikit-learn'
   search_algorithm: 'random'
   early_stopping: False
+  n_jobs: 5
+  k_fold_num: 5
+  model_grids:
+    svm:  # Support Vector Machine
+      C: [0.1, 1, 10]
+      kernel: ['linear', 'rbf']
+      gamma: ['scale', 'auto']
+    dt:  # Decision Tree
+      max_depth: [None, 10, 20, 30]
+      min_samples_split: [2, 5, 10]
+      min_samples_leaf: [1, 2, 4]
+    lr:  # Linear Regression
+      fit_intercept: [True, False]
+    ridge:  # Ridge Regression
+      alpha: [0.1, 1, 10]
+      fit_intercept: [True, False]
+      solver: ['auto', 'svd', 'cholesky', 'saga']
+    br:  # Bayesian Ridge Regression
+      alpha_1: [1e-6, 1e-5, 1e-4]
+      alpha_2: [1e-6, 1e-5, 1e-4]
+      lambda_1: [1e-6, 1e-5, 1e-4]
+      lambda_2: [1e-6, 1e-5, 1e-4]
+    huber:  # Huber Regression
+      alpha: [0.0001, 0.001, 0.01]
+      epsilon: [1.1, 1.35, 1.5]
+    rf:  # Random Forest
+      n_estimators: [100, 200, 300]
+      max_depth: [None, 10, 20, 30]
+      min_samples_split: [2, 5, 10]
+      min_samples_leaf: [1, 2, 4]
+    et:  # Extra Trees
+      n_estimators: [100, 200, 300]
+      max_depth: [None, 10, 20, 30]
+      min_samples_split: [2, 5, 10]
+      min_samples_leaf: [1, 2, 4]
+    gbr:  # Gradient Boosting Regressor
+      n_estimators: [100, 200, 300]
+      learning_rate: [0.01, 0.1, 0.2]
+      max_depth: [3, 5, 7]
+      min_samples_split: [2, 5, 10]
+    lightgbm:  # LightGBM
+      num_leaves: [31, 62, 127]
+      learning_rate: [0.01, 0.1, 0.2]
+      n_estimators: [100, 200, 300]
 
-# ['svm', 'dt', 'lr', 'ridge', 'br', 'huber', 'rf', 'et', 'gbr', 'lightgbm', 'mlp'] ['rf', 'et', 'gbr', 'lightgbm']
+# ['svm', 'dt', 'lr', 'ridge', 'br', 'huber', 'rf', 'et', 'gbr', 'lightgbm', 'mlp'] ['rf', 'et', 'gbr', 'lightgbm'] xgboost, catboost, adaboost, bagging, stacking, blending, voting
 # lr lasso ridge en lar llar omp br ard par ransac tr huber kr svm knn dt rf et ada gbr mlp lightgbm dummy
