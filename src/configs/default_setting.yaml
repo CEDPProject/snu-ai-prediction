@@ -11,7 +11,7 @@ DATASET:
   shuffle: true
   pin_memory: true
   drop_last: true
-  category_name: wind
+  category_name: solar
   data_version: version2_241107
   input_structure: independence
   align_time: False
