@@ -14,14 +14,14 @@ MLModelEnsemble:
   dt_max_depth: 10
 
 MLpycaret:
-  selected_models: ['gbr', 'lightgbm']
-  enable_tuning: True
+  selected_models: ['lightgbm']
+  enable_tuning: False
   tuning_iter: 10
   optimize_metric: 'MSE'
   search_library: 'scikit-learn'
   search_algorithm: 'grid'
   early_stopping: False
-  n_jobs: 5
+  n_jobs: 3
   k_fold_num: 5
   model_grids:
     svm:  # Support Vector Machine

@@ -121,6 +121,7 @@ def main(cfg):
                                     grid_model=cfg.MODELSETTING.model_grids,
                                     k_fold_num=cfg.MODELSETTING.k_fold_num,
                                     category_name = cfg.DATASET.category_name,
+                                    ignore_features_list = cfg.DATASET.ignore_feature
                                     )
             
             test_metrics = test_ml_pycaret(all_trained_models_dict, 

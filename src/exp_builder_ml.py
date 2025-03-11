@@ -127,6 +127,7 @@ def test_ml(model_dict, tst_loader, eval_merge_grp=False, category_name=None):
 def training_ml_pycaret(
     trn_loader,
     grid_model,
+    ignore_features_list,
     selected_models=None,
     k_fold_num=5,
     save_dir='./saved_model/',
@@ -153,7 +154,6 @@ def training_ml_pycaret(
     for idx, (model_key, area_dict) in enumerate(trn_loader.items(), start=1):
         for area_grp_id, data_dict in area_dict.items():
             print(f"Processing ({model_key}, {area_grp_id}) ({idx}/{len(trn_loader)})")
-
             # Combine train_x and train_y into a single DataFrame
             train_x = data_dict['train_x']
             train_x = train_x.drop(columns=["AREA_GRP_ID"], errors="ignore")
@@ -172,7 +172,8 @@ def training_ml_pycaret(
                 verbose=False,
                 html=False,
                 n_jobs=n_jobs,
-                session_id=42 
+                session_id=42,
+                ignore_features=ignore_features_list
             )
             
             # Get available models
@@ -254,6 +255,7 @@ def training_ml_pycaret(
 
                     final_model = best_model
                 else:
+                    
                     params = trained_model.get_params()
                     final_model = trained_model
 
@@ -270,19 +272,22 @@ def training_ml_pycaret(
                 all_model_results.append(model_results)
 
                 # Store the final trained model
-                all_trained_models[(model_key, area_grp_id, model_name, params)] = final_model
+                # all_trained_models[(model_key, area_grp_id, model_name, params)] = final_model
 
-    final_results_df = pd.DataFrame(all_grid_results)
-    final_results_df["params"] = final_results_df["params"].astype(str)
-    if category_name == 'wind':
-        final_results_df['area_grp_id'] = final_results_df['area_grp_id'].apply(lambda x: x.split('_')[0])
-    final_results_df = final_results_df[["area_grp_id", "model_name", "params", "MSE", "MAE", "MAPE", "RMSE", "R2", "RMSLE"]]
-    aggregated_df = final_results_df.groupby(["params", "area_grp_id", "model_name"]).mean().reset_index()
-    aggregated_df.to_csv(f'{save_dir}/grid_results.csv', index=False)
+                all_trained_models[(model_key, area_grp_id, model_name, frozenset(params.items()))] = final_model
+                
+    if enable_tuning:
+        final_results_df = pd.DataFrame(all_grid_results)
+        final_results_df["params"] = final_results_df["params"].astype(str)
+        if category_name == 'wind':
+            final_results_df['area_grp_id'] = final_results_df['area_grp_id'].apply(lambda x: x.split('_')[0])
+        final_results_df = final_results_df[["area_grp_id", "model_name", "params", "MSE", "MAE", "MAPE", "RMSE", "R2", "RMSLE"]]
+        aggregated_df = final_results_df.groupby(["params", "area_grp_id", "model_name"]).mean().reset_index()
+        aggregated_df.to_csv(f'{save_dir}/grid_results.csv', index=False)
 
-    # Combine all model results into a single DataFrame
-    results_df = pd.DataFrame(all_model_results)
-    results_df.to_csv(f'{save_dir}/training_results_with_tuning.csv', index=False)
+        # Combine all model results into a single DataFrame
+        results_df = pd.DataFrame(all_model_results)
+        results_df.to_csv(f'{save_dir}/training_results_with_tuning.csv', index=False)
 
     return all_trained_models, feature_names_dict
 

@@ -11,12 +11,13 @@ DATASET:
   shuffle: true
   pin_memory: true
   drop_last: true
-  category_name: solar
+  category_name: wind
   data_version: version2_241107
   input_structure: independence
   align_time: False
   lead_time_align: False
   target: power
+  ignore_feature: ['NWP_TP_CD', 'AREA_GRP_ID']
 
 TRAIN:
   epoch: 25
