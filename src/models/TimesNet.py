@@ -56,7 +56,7 @@ class TimesBlock(nn.Module):
             out = self.conv(out)
             # reshape back
             out = out.permute(0, 2, 3, 1).reshape(B, -1, N)
-            res.append(out[:, :(self.seq_len + self.pred_len), :])
+            res.append(out[:, :self.seq_len + self.pred_len, :])
         res = torch.stack(res, dim=-1)
         # adaptive aggregation
         period_weight = F.softmax(period_weight, dim=1)
@@ -86,37 +86,31 @@ class TimesNet(nn.Module):
         self.layer_norm = nn.LayerNorm(configs.d_model)
         self.predict_linear = nn.Linear(
             self.seq_len, self.pred_len + self.seq_len)
+        
         self.projection = nn.Linear(
             configs.d_model, configs.c_out, bias=True)
-
+        
+        self.output_layer = nn.Linear(
+            self.pred_len + self.seq_len, self.pred_len)
+        
     def forecast(self, x_enc):
-        # Normalization from Non-stationary Transformer
-        means = x_enc.mean(1, keepdim=True).detach()
-        x_enc = x_enc - means
-        stdev = torch.sqrt(
-            torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
-        x_enc /= stdev
         x_mark_enc = None
 
         # embedding
         enc_out = self.enc_embedding(x_enc, x_mark_enc)  # [B,T,C]
+
         enc_out = self.predict_linear(enc_out.permute(0, 2, 1)).permute(
             0, 2, 1)  # align temporal dimension
         # TimesNet
         for i in range(self.layer):
             enc_out = self.layer_norm(self.model[i](enc_out))
+
         # porject back
         dec_out = self.projection(enc_out)
 
-        # De-Normalization from Non-stationary Transformer
-        dec_out = dec_out * \
-                  (stdev[:, 0, :].unsqueeze(1).repeat(
-                      1, self.pred_len + self.seq_len, 1))
-        dec_out = dec_out + \
-                  (means[:, 0, :].unsqueeze(1).repeat(
-                      1, self.pred_len + self.seq_len, 1))
+        dec_out = self.output_layer(dec_out.permute(0, 2, 1))
         return dec_out
 
     def forward(self, x_enc):
         dec_out = self.forecast(x_enc)
-        return dec_out[:, -self.pred_len:, :]  # [B, L, D]
+        return dec_out

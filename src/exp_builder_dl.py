@@ -239,7 +239,7 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             for k, v in region_metrics.items():
                 results[f'avg_{region}_{k}'] = v
             _logger.info(f"📊 Average {name} Metrics for region {region}: {region_metrics}")
-
+    
     if return_individual_outputs:
         individual_metrics = {}
         for (model_key, area_grp_id), outputs in total_outputs.items():

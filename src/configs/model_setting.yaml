@@ -1,5 +1,5 @@
 DLinear:
-  moving_avg: 3
+  moving_avg: 5
   individual: False
 
 TimesNet:
@@ -12,11 +12,32 @@ TimesNet:
   embed: learned
   freq: h
 
-TemporalFusionTransformer:
-  input_feature_num: 1
-  gmlp_depth: 3
-  attention_together: True
-  RNN_type: GRU
+PatchTST:
+  e_layers: 2
+  d_model: 128
+  d_ff: 512
+  dropout: 0.1
+  embed: learned
+  freq: h
+  factor: 3
+  n_heads: 8
+  activation: gelu
+
+iTransformer:
+  e_layers: 2
+  d_model: 128
+  d_ff: 512
+  dropout: 0.1
+  embed: learned
+  freq: h
+  factor: 3
+  n_heads: 8
+  activation: gelu
+
+
+
+
+# ML Models
 
 MLModelEnsemble:
   selected_models: svr dt rf
