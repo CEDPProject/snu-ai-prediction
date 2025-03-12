@@ -40,14 +40,14 @@ def cal_metric(pred, true):
     rmse = RMSE(pred, true)
     mape = MAPE(pred, true)
     mspe = MSPE(pred, true)
-    rse = RSE(pred, true)
+    # rse = RSE(pred, true)
     
     metric_dict = {'MAE': mae,
                    'MSE': mse,
                    'RMSE': rmse,
                    'MAPE': mape,
-                   'MSPE': mspe,
-                   'RSE': rse}
+                   'MSPE': mspe,}
+                #    'RSE': rse}
     
     print('mse: {:.4f}\t mae: {:.4f}\t mape: {:.4f}'.format(mse, mae, mape))
     return metric_dict

@@ -53,7 +53,7 @@ def load_dataset(
     elif target == 'both':
         ground_truth = pd.merge(data_dict['real_power'], data_dict['weather_forecast'], on='TM', how='inner')
         ground_truth = ground_truth.drop(columns=['NAME', 'HGT']).fillna(method='ffill')
-    
+        
     # 발전 호기 필터링
     data_dict['ECMWF'] = filtering_id(data_dict['ECMWF'], data_dict['location'], category_name)
     data_dict['LDAPS'] = filtering_id(data_dict['LDAPS'], data_dict['location'], category_name)
@@ -61,7 +61,7 @@ def load_dataset(
     # 사용하지 않는 Feature 제거
     data_dict['ECMWF'] = remove_columns(data_dict['ECMWF'], del_feature)
     data_dict['LDAPS'] = remove_columns(data_dict['LDAPS'], del_feature)
-
+    
     # 동일 CRTN_TM, FCST_TM 가지는 데이터만 모델링 진행
     if align_time:
         data_list, common_times = align_times([data_dict['ECMWF'], data_dict['LDAPS']])
@@ -220,7 +220,6 @@ def split_processing(data_dict,
                             'test_y': test_y.drop(columns=['FCST_TM'], errors='ignore'),
                             'scaler': scaler
                         }
-                    
                     # 스케일러 저장
                     scaler_dict[(key, str(area_grp_id))] = scaler
 

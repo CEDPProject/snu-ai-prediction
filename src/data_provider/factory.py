@@ -21,10 +21,13 @@ def create_dataloader(
                 input_structure: str,
                 data_version: str,
                 model_name: str,
+                seq_len: int,
+                pred_len: int,
                 target: str = 'power',
                 lead_time_align: bool = False,
                 split_rate: list = [0.7, 0.1, 0.2],
                 align_time: bool = True,
+                del_feature: list = None
                 ):
 
     assert scale in (None, 'minmax', 'minmax_square', 'standard')
@@ -38,25 +41,31 @@ def create_dataloader(
                             input_structure        = input_structure,
                             pre_training           = pre_training,
                             lead_time_align        = lead_time_align,
-                            del_feature            = ['SWDDIR'],
+                            del_feature            = del_feature,
                             data_version           = data_version,
                             split_rate             = split_rate,
                             align_time             = align_time
                             )
-    
+
     trn_dataset = WeatherPredictionDataset(data_dict        = data_dict,
                                             category_name   = category_name,
                                             input_structure = input_structure,
+                                            seq_len         = seq_len, 
+                                            pred_len        = pred_len,
                                             type            = 'train')
     
     val_dataset = WeatherPredictionDataset(data_dict        = data_dict,
                                             category_name   = category_name,
                                             input_structure = input_structure,
+                                            seq_len         = seq_len, 
+                                            pred_len        = pred_len,                                            
                                             type            = 'val')
     
     tst_dataset = WeatherPredictionDataset(data_dict        = data_dict,
                                             category_name   = category_name,
                                             input_structure = input_structure,
+                                            seq_len         = seq_len, 
+                                            pred_len        = pred_len,
                                             type            = 'test')
     
     # torch dataloader

@@ -11,16 +11,20 @@ DATASET:
   shuffle: true
   pin_memory: true
   drop_last: true
-  category_name: wind
+  category_name: solar
   data_version: version2_241107
   input_structure: independence
+  individual_model: True
   align_time: False
   lead_time_align: False
   target: power
-  ignore_feature: ['NWP_TP_CD', 'AREA_GRP_ID']
+  seq_len: 1
+  pred_len: 1
+  c_out: 1
+  ignore_feature: ['SWDDIR', 'NWP_TP_CD']
 
 TRAIN:
-  epoch: 25
+  epoch: 30
   ckp_metric: loss
   eval_epochs: 1
   log_epochs: 1
@@ -31,7 +35,7 @@ TRAIN:
   data_num: 0
   fine_tuning_method: full
   grad_accum_steps: 1
-  mixed_precision: fp16
+  mixed_precision: 'no'
   wandb: 
     use: false
     wandb_iter: 500

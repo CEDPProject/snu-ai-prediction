@@ -1,3 +1,17 @@
+DLinear:
+  moving_avg: 3
+  individual: False
+
+TimesNet:
+  e_layers: 2
+  d_model: 128
+  d_ff: 512
+  num_kernels: 5
+  dropout: 0.1
+  top_k: 5
+  embed: learned
+  freq: h
+
 TemporalFusionTransformer:
   input_feature_num: 1
   gmlp_depth: 3

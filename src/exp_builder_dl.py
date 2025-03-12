@@ -4,9 +4,7 @@ import time
 import os
 import json
 import numpy as np
-import pandas as pd
 import torch
-import torch.nn as nn
 from collections import OrderedDict
 from accelerate import Accelerator
 from utils.utils import cal_metric, Float32Encoder
@@ -29,272 +27,232 @@ class AverageMeter:
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
-        
-def training_dl(
-    model, trainloader, validloader, criterion, optimizer, accelerator: Accelerator, 
-    epochs: int, eval_epochs: int, log_epochs: int, log_eval_iter: int, wandb_iter: int,
-    use_wandb: bool, ckp_metric: str, savedir: str, model_name: str, 
-    pre_training:int, early_stopping_count: int, classification: bool, return_output: bool):
 
-    # avereage meter
-    batch_time_m = AverageMeter()
-    data_time_m = AverageMeter()
-    losses_m = AverageMeter()
+def training_dl(model, trainloader, validloader, criterion, optimizer, accelerator: Accelerator, 
+                epochs: int, eval_epochs: int, log_epochs: int, log_eval_iter: int, wandb_iter: int,
+                use_wandb: bool, ckp_metric: str, savedir: str, model_name: str, 
+                pre_training: int, early_stopping_count: int, return_output: bool):
 
-    # set mode
-    model.train()
-    optimizer.zero_grad()
-    end_time = time.time()
-
-    # targets and outputs
-    total_targets = []
-    total_outputs = []
-    
     early_stopping = EarlyStopping(patience=early_stopping_count)
-        
-    # init best score and step
     best_score = np.inf
-    wandb_iteration = 0
-    for epoch in range(epochs):
-        epoch_time = time.time()
-        for idx, item in enumerate(trainloader):
-            data_time_m.update(time.time() - end_time)
-            
-            # input
-            tabular_cat, tabular_con = item['inputs']['tabular']['cat'].type(torch.float), item['inputs']['tabular']['con'].type(torch.float)
-            tsa = item['inputs']['tsa'].type(torch.float)
-            tsb = item['inputs']['tsb'].type(torch.float)
-            target = item['targets'].type(torch.float)
-                        
-            # output
-            if model_name == 'TemporalFusionTransformer':
-                TFT_input = {'s_cat': tabular_cat.int(),
-                            's_cont': tabular_con,
-                            'k_cont': tsa,
-                            'o_cont': tsb,
-                            'targets': target}
-                outputs = model(TFT_input)
-            else:
-                outputs = model(x_cat = tabular_cat, x_cons = tabular_con, x_tsa = tsa, x_tsb = tsb)
-            
-            # final loss
-            if pre_training:
-                target = torch.concat([tabular_cat, tabular_con, 
-                            tsa.reshape(tabular_cat.size(0),-1), 
-                            tsb.reshape(tabular_cat.size(0),-1)], axis=1)
-                
-            loss = criterion(outputs, target)
-            accelerator.backward(loss)
-            
-            # loss update
-            optimizer.step()
-            optimizer.zero_grad()
-            losses_m.update(loss.item(), n = target.size(0))
-            
-            # batch time
-            batch_time_m.update(time.time() - end_time)
-            wandb_iteration += 1
-            
-            outputs = outputs.detach().cpu().numpy()
-            target = target.detach().cpu().numpy()
 
-            total_outputs.append(outputs)
-            total_targets.append(target)
-            
-            if use_wandb and (wandb_iteration+1) % wandb_iter:
-                train_results = OrderedDict([
-                    ('lr',optimizer.param_groups[0]['lr']),
-                    ('train_loss',losses_m.avg)
-                ])
-                wandb.log(train_results, step=idx+1)
-        
-        if (epoch+1) % log_epochs == 0:
-            _logger.info('TRAIN [{:>4d}/{}] Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
-                        'LR: {lr:.3e} '
-                        'Time: {batch_time.val:.3f}s, {rate:>7.2f}/s ({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s) '
-                        'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(
-                        (idx+1), 
-                        len(trainloader), 
-                        loss       = losses_m, 
-                        lr         = optimizer.param_groups[0]['lr'],
-                        batch_time = batch_time_m,
-                        rate       = tabular_cat.size(0) / batch_time_m.val,
-                        rate_avg   = tabular_cat.size(0) / batch_time_m.avg,
-                        data_time  = data_time_m))
-                
-        if (epoch+1) % eval_epochs == 0:
-            eval_metrics = test_dl(
-                model          = model, 
-                dataloader     = validloader, 
-                criterion      = criterion,
-                name           = 'VALID',
-                log_eval_iter  = log_eval_iter,
-                pre_training   = pre_training,
-                return_output  = False,
-                savedir        = savedir,
-                model_name     = model_name,
-                accelerator    = accelerator,
-                classification = classification
-                )
-    
-            model.train()
-            
-            # eval results
-            eval_results = dict([(f'eval_{k}', v) for k, v in eval_metrics.items()])
-            
-            # wandb
-            if use_wandb:
-                wandb.log(eval_results, step=idx+1)
-                
-            # check_point
-            if best_score > eval_metrics[ckp_metric]:
-                # save results
-                state = {'best_epoch':epoch ,
-                            'best_step':idx+1, 
-                            f'best_{ckp_metric}':eval_metrics[ckp_metric]}
-                
-                print('Save best model complete, epoch: {0:}: Best metric has changed from {1:.5f} \
-                    to {2:.5f}'.format(epoch, best_score, eval_metrics[ckp_metric]))
-    
-                accelerator.wait_for_everyone()
-                if accelerator.is_main_process:
-                    state.update(eval_results)
-                    json.dump(state, open(os.path.join(savedir, f'best_results.json'),'w'), indent='\t', cls=Float32Encoder)
-                    # save model
-                    torch.save(model.state_dict(), os.path.join(savedir, f'best_model.pt'))
-                
-                _logger.info('Best {0} {1:6.6f} to {2:6.6f}'.format(ckp_metric.upper(), best_score, eval_metrics[ckp_metric]))
+    for (model_key, area_grp_id), loader in trainloader.items():
+        _logger.info(f"🔹 Training on {model_key} - {area_grp_id}")
 
-                best_score = eval_metrics[ckp_metric]
-                
-            early_stopping(eval_metrics['loss'])
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
-            
+        # 개별 모델인 경우 딕셔너리에서 선택, 단일 모델이면 동일 모델 사용
+        if isinstance(model, dict):
+            current_model = model[(model_key, area_grp_id)]
+            current_optimizer = optimizer[(model_key, area_grp_id)]
+        else:
+            current_model = model
+            current_optimizer = optimizer
+
+        batch_time_m = AverageMeter()
+        data_time_m = AverageMeter()
+        losses_m = AverageMeter()
+
+        current_model.train()
+        current_optimizer.zero_grad()
         end_time = time.time()
+
+        early_stopping = EarlyStopping(patience=early_stopping_count)
+        best_score = np.inf
+        wandb_iteration = 0
+
+        for epoch in range(epochs):
+            for idx, item in enumerate(loader):
+                data_time_m.update(time.time() - end_time)
+                
+                inputs = item['inputs'].float()
+                targets = item['targets'].float()
+                outputs = current_model(inputs)
+                loss = criterion(outputs, targets)
+                
+                accelerator.backward(loss)
+                current_optimizer.step()
+                current_optimizer.zero_grad()
+                
+                batch_time_m.update(time.time() - end_time)
+                wandb_iteration += 1
+
+                if use_wandb and (wandb_iteration+1) % wandb_iter:
+                    train_results = OrderedDict([
+                        ('lr', current_optimizer.param_groups[0]['lr']),
+                        ('train_loss', losses_m.avg)
+                    ])
+                    wandb.log(train_results, step=idx+1)
             
-    # logging best score and step
-    _logger.info('Best Metric: {0:6.6f} (step {1:})\n'.format(state[f'best_{ckp_metric}'], state['best_step']))
+            if (epoch+1) % log_epochs == 0:
+                _logger.info('Epoch [{epoch}/{total_epoch}] TRAIN [{:>4d}/{}] Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
+                            'LR: {lr:.3e} '
+                            'Time: {batch_time.val:.3f}s, {rate:>7.2f}/s ({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s) '
+                            'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(
+                            (idx+1), 
+                            len(loader), 
+                            total_epoch = epochs,
+                            epoch       = epoch + 1,
+                            loss        = losses_m, 
+                            lr          = current_optimizer.param_groups[0]['lr'],
+                            batch_time  = batch_time_m,
+                            rate        = inputs.size(0) / batch_time_m.val if batch_time_m.val > 0 else 0,
+                            rate_avg    = inputs.size(0) / batch_time_m.avg if batch_time_m.avg > 0 else 0,
+                            data_time   = data_time_m))
 
-    total_outputs = np.concatenate(total_outputs, axis=0)
-    total_targets = np.concatenate(total_targets, axis=0)
-    
-    accelerator.wait_for_everyone()
-    if accelerator.is_main_process:
-        # save latest model
-        torch.save(model.state_dict(), os.path.join(savedir, f'latest_model.pt'))
-        print('Save latest model complete, epoch: {0:}: Best metric has changed from {1:.5f} \
-            to {2:.5f}'.format(epoch, best_score, eval_metrics[ckp_metric]))
+            if (epoch + 1) % eval_epochs == 0:
+                if (model_key, area_grp_id) in validloader:
+                    eval_metrics = test_dl(
+                        model                     = current_model if not isinstance(model, dict) else { (model_key, area_grp_id): current_model },
+                        dataloader                = { (model_key, area_grp_id): validloader[(model_key, area_grp_id)] },
+                        criterion                 = criterion,
+                        name                      = 'VALID',
+                        log_eval_iter             = log_eval_iter,
+                        pre_training              = pre_training,
+                        savedir                   = savedir,
+                        model_name                = model_name,
+                        accelerator               = accelerator,
+                        return_output             = False,
+                        return_avg                = True,
+                        return_individual_outputs = False
+                    )
 
-        # save latest results
-        state = {'best_epoch':epoch ,'best_step':idx+1, f'latest_{ckp_metric}':eval_metrics[ckp_metric]}
-        state.update(eval_results)
-        json.dump(state, open(os.path.join(savedir, f'latest_results.json'),'w'), indent='\t', cls=Float32Encoder)
-        
-        if return_output:
-            np.save(os.path.join(savedir, f'Train_total_outputs.npy'), total_outputs)
-            np.save(os.path.join(savedir, f'Train_total_targets.npy'), total_targets)
+                    current_model.train()
+                    
+                    eval_results = {f'eval_{k}': v for k, v in eval_metrics.items()}
+
+                    if use_wandb:
+                        wandb.log(eval_results, step=idx+1)
+
+                    if best_score > eval_metrics[ckp_metric]:
+                        state = {'best_epoch': epoch, 'best_step': idx+1, f'best_{ckp_metric}': eval_metrics[ckp_metric]}
+                        
+                        print('Save best model complete, epoch: {0}: Best metric has changed from {1:.5f} to {2:.5f}'.format(
+                            epoch, best_score, eval_metrics[ckp_metric]))
+            
+                        accelerator.wait_for_everyone()
+                        if accelerator.is_main_process:
+                            state.update(eval_results)
+                            # 단일 모델인 경우 파일명 지정
+                            if isinstance(model, dict):
+                                result_file = os.path.join(savedir, f'best_results_{model_key}_{area_grp_id}.json')
+                                model_file = os.path.join(savedir, f'best_model_{model_key}_{area_grp_id}.pt')
+                            else:
+                                result_file = os.path.join(savedir, 'best_results.json')
+                                model_file = os.path.join(savedir, 'best_model.pt')
+                            json.dump(state, open(result_file, 'w'), indent='\t', cls=Float32Encoder)
+                            torch.save(current_model.state_dict(), model_file)
+                            if isinstance(model, dict):
+                                _logger.info(f"✅ Saved best model for {model_key} - {area_grp_id}")
+                            else:
+                                _logger.info("✅ Saved best model")
+                        _logger.info('Best {0} {1:6.6f} to {2:6.6f}'.format(ckp_metric.upper(), best_score, eval_metrics[ckp_metric]))
+
+                        best_score = eval_metrics[ckp_metric]
+
+                    early_stopping(eval_metrics['loss'])
+                    if early_stopping.early_stop:
+                        _logger.info("⏳ Early stopping triggered")
+                        break
+                else:
+                    _logger.info(f"🚨 No validation data for {model_key} - {area_grp_id}, skipping validation.")
+
+            end_time = time.time()
+
+    _logger.info("🎉 Training complete for all datasets")
+
 
 def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training: int, log_eval_iter: int, 
-        savedir: str, model_name: str, name: str = 'TEST', return_output: bool = False, 
-        classification: bool = False):
+            savedir: str, model_name: str, name: str = 'TEST', return_output: bool = False, return_avg: bool = True, 
+            return_individual_outputs: bool = False):
     
-    _logger.info('\n[Start {}]'.format(name))
-    
-    # avereage meter
+    _logger.info(f'\n[🔍 Start {name} Evaluation]')
+
     batch_time_m = AverageMeter()
     data_time_m = AverageMeter()
     losses_m = AverageMeter()
     
-    # targets and outputs
-    total_targets = []
-    total_outputs = []
-    
+    total_targets = {}
+    total_outputs = {}
+
     end_time = time.time()
     wandb_iteration = 0
-    
-    model.eval()
-    with torch.no_grad():
-        for idx, item in enumerate(dataloader):
+
+    for (model_key, area_grp_id), loader in dataloader.items():
+        _logger.info(f"🧪 Testing on {model_key} - {area_grp_id}")
+        outputs_list, targets_list = [], []
+        if isinstance(model, dict):
+            current_model = model[(model_key, area_grp_id)]
+        else:
+            current_model = model
+        for idx, item in enumerate(loader):
             data_time_m.update(time.time() - end_time)
-            
-            # input
-            tabular_cat, tabular_con = item['inputs']['tabular']['cat'].type(torch.float), item['inputs']['tabular']['con'].type(torch.float)
-            tsa = item['inputs']['tsa'].type(torch.float)
-            tsb = item['inputs']['tsb'].type(torch.float)
-            target = item['targets'].type(torch.float)
-            
-            # output
-            if model_name == 'TemporalFusionTransformer':
-                TFT_input = {'s_cat': tabular_cat.int(),
-                            's_cont': tabular_con,
-                            'k_cont': tsa,
-                            'o_cont': tsb,
-                            'targets': target}
-                outputs = model(TFT_input)
+
+            inputs = item['inputs'].float()
+            targets = item['targets'].float()
                 
-            else:
-                outputs = model(x_cat = tabular_cat, x_cons = tabular_con, x_tsa = tsa, x_tsb = tsb)
-
-            # final loss
-            if pre_training:
-                target = torch.concat([tabular_cat, tabular_con, 
-                            tsa.reshape(tabular_cat.size(0),-1), 
-                            tsb.reshape(tabular_cat.size(0),-1)], axis=1)
+            outputs = current_model(inputs)
                 
-            # final loss
-            loss = criterion(outputs, target)
+            loss = criterion(outputs, targets)
+            loss = accelerator.gather(loss).mean()
 
-            loss = accelerator.gather(loss)
-            loss = torch.mean(loss)
-            
-            outputs, target = accelerator.gather_for_metrics((outputs.contiguous(), target.contiguous()))
-            losses_m.update(loss.item(), n=target.size(0))
-                        
-            outputs = outputs.detach().cpu().numpy()
-            target = target.detach().cpu().numpy()
+            outputs, targets = accelerator.gather_for_metrics((outputs.contiguous(), targets.contiguous()))
+            losses_m.update(loss.item(), n=targets.size(0))
+                
+            outputs_list.append(outputs.detach().cpu().numpy())
+            targets_list.append(targets.detach().cpu().numpy())
 
-            total_outputs.append(outputs)
-            total_targets.append(target)
-            
-            # batch time        
             batch_time_m.update(time.time() - end_time)
-            
+
             if (idx+1) % log_eval_iter == 0:
                 _logger.info('{name} [{:>4d}/{}] Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
                             'Time: {batch_time.val:.3f}s, {rate:>7.2f}/s ({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s) '
                             'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(
                             (idx+1), 
-                            len(dataloader),
+                            len(loader),
                             name       = name,
                             loss       = losses_m, 
                             batch_time = batch_time_m,
-                            rate       = tabular_cat.size(0) / batch_time_m.val,
-                            rate_avg   = tabular_cat.size(0) / batch_time_m.avg,
+                            rate       = inputs.size(0) / batch_time_m.val,
+                            rate_avg   = inputs.size(0) / batch_time_m.avg,
                             data_time  = data_time_m))
-                
+                    
             end_time = time.time()
+
+        total_outputs[(model_key, area_grp_id)] = np.concatenate(outputs_list, axis=0)
+        total_targets[(model_key, area_grp_id)] = np.concatenate(targets_list, axis=0)
     
-    total_outputs = np.concatenate(total_outputs, axis=0)
-    total_targets = np.concatenate(total_targets, axis=0)
-    print(f'{name} shape:', total_outputs.shape, total_targets.shape)
-    
-    results = OrderedDict([('loss',losses_m.avg)])
-    
-    metrics = cal_metric(pred = total_outputs, true = total_targets)
-    results.update([(f'{k}', m) for k, m in metrics.items()])
-    
-    # logging metrics
-    _logger.info("\n{}: ".format(name) + " ".join('{}: {}'.format(k.upper(), m) for k, m in metrics.items()) + "\n")
-    
-    # return results
-    results.update([(f'{k}', m) for k, m in metrics.items()])
-    _logger.info('[End {}]\n'.format(name))
+    results = OrderedDict([('loss', losses_m.avg)])
+
+    if return_avg:
+        # 동일 지역(두 번째 요소의 접두어)을 기준으로 그룹화하여 평균 계산
+        region_outputs = {}
+        region_targets = {}
+        for (model_key, area_grp_id), outputs in total_outputs.items():
+            # area_grp_id에 '_'가 있으면 접두어 추출, 없으면 그대로 사용
+            region = area_grp_id.split('_')[0]
+            region_outputs.setdefault(region, []).append(outputs)
+            region_targets.setdefault(region, []).append(total_targets[(model_key, area_grp_id)])
+        for region, out_list in region_outputs.items():
+            # np.concatenate로 배열들을 합친 후, axis=0으로 평균 계산
+            region_avg_output = np.mean(np.concatenate(out_list, axis=0), axis=0)
+            region_avg_target = np.mean(np.concatenate(region_targets[region], axis=0), axis=0)
+            region_metrics = cal_metric(pred=region_avg_output, true=region_avg_target)
+            for k, v in region_metrics.items():
+                results[f'avg_{region}_{k}'] = v
+            _logger.info(f"📊 Average {name} Metrics for region {region}: {region_metrics}")
+
+    if return_individual_outputs:
+        individual_metrics = {}
+        for (model_key, area_grp_id), outputs in total_outputs.items():
+            metrics = cal_metric(pred=outputs, true=total_targets[(model_key, area_grp_id)])
+            for k, v in metrics.items():
+                results[f'{model_key}_{area_grp_id}_{k}'] = v
+            individual_metrics[(model_key, area_grp_id)] = metrics
+        _logger.info(f"📊 Individual {name} Metrics: {individual_metrics}")
     
     accelerator.wait_for_everyone()
-    if accelerator.is_main_process:
-        if return_output:
-            np.save(os.path.join(savedir, f'{name}_total_outputs.npy'), total_outputs)
-            np.save(os.path.join(savedir, f'{name}_total_targets.npy'), total_targets)
+    if accelerator.is_main_process and return_output:
+        os.makedirs(savedir, exist_ok=True)
+        np.save(os.path.join(savedir, f'{name}_total_outputs.npy'), total_outputs)
+        np.save(os.path.join(savedir, f'{name}_total_targets.npy'), total_targets)
+    
     return results
