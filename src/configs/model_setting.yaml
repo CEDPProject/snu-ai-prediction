@@ -8,7 +8,7 @@ TimesNet:
   d_ff: 512
   num_kernels: 5
   dropout: 0.1
-  top_k: 5
+  top_k: 1
   embed: learned
   freq: h
 

@@ -7,7 +7,7 @@ def parser():
     parser.add_argument('--default_cfg', type=str, help='configuration for default setting')
     parser.add_argument('--model_cfg', type=str, help='configuration for model')
     parser.add_argument(
-        "opts",
+        "--opts",
         help="Modify config options using the command-line",
         default=None,
         nargs=argparse.REMAINDER,
@@ -31,13 +31,15 @@ def parser():
         else:
             print(f"Model '{modelname}' not found in the model_config.")
             return cfg
-
+            
     # update cfg
-    for k, v in zip(args.opts[0::2], args.opts[1::2]):
-        try:
-            # types except for int, float, and str
-            OmegaConf.update(cfg, k, eval(v), merge=True)
-        except:
-            OmegaConf.update(cfg, k, v, merge=True)
-
+    if args.opts:
+        for opt in args.opts:
+            if "=" in opt:
+                k, v = opt.split("=", 1)
+                try:
+                    OmegaConf.update(cfg, k, eval(v), merge=True)
+                except:
+                    OmegaConf.update(cfg, k, v, merge=True)
+                    
     return cfg  
