@@ -193,10 +193,10 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
                 
             loss = criterion(outputs, targets)
             loss = accelerator.gather(loss).mean()
-
+            
             outputs, targets = accelerator.gather_for_metrics((outputs.contiguous(), targets.contiguous()))
             losses_m.update(loss.item(), n=targets.size(0))
-                
+            
             outputs_list.append(outputs.detach().cpu().numpy())
             targets_list.append(targets.detach().cpu().numpy())
 

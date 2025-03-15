@@ -24,7 +24,7 @@ DATASET:
   ignore_feature: ['SWDDIR', 'NWP_TP_CD']
 
 TRAIN:
-  epoch: 25
+  epoch: 1
   ckp_metric: loss
   eval_epochs: 1
   log_epochs: 1
