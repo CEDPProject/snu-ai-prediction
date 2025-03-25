@@ -161,7 +161,7 @@ def training_dl(model, trainloader, validloader, criterion, optimizer, accelerat
 
 
 def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training: int, log_eval_iter: int, 
-            savedir: str, model_name: str, name: str = 'TEST', return_output: bool = False, return_avg: bool = True, 
+            savedir: str, model_name: str, name: str = 'TEST', return_output: bool = True, return_avg: bool = True, 
             return_individual_outputs: bool = False):
     
     _logger.info(f'\n[🔍 Start {name} Evaluation]')
@@ -233,13 +233,15 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             region_targets.setdefault(region, []).append(total_targets[(model_key, area_grp_id)])
         for region, out_list in region_outputs.items():
             # np.concatenate로 배열들을 합친 후, axis=0으로 평균 계산
-            region_avg_output = np.mean(np.concatenate(out_list, axis=0), axis=0)
-            region_avg_target = np.mean(np.concatenate(region_targets[region], axis=0), axis=0)
+            # region_avg_output = np.mean(np.concatenate(out_list, axis=0), axis=0)
+            # region_avg_target = np.mean(np.concatenate(region_targets[region], axis=0), axis=0)
+            region_avg_output = np.concatenate(out_list, axis=0)
+            region_avg_target = np.concatenate(region_targets[region], axis=0)
             region_metrics = cal_metric(pred=region_avg_output, true=region_avg_target)
             for k, v in region_metrics.items():
                 results[f'avg_{region}_{k}'] = v
             _logger.info(f"📊 Average {name} Metrics for region {region}: {region_metrics}")
-    
+
     if return_individual_outputs:
         individual_metrics = {}
         for (model_key, area_grp_id), outputs in total_outputs.items():

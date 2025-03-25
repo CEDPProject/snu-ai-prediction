@@ -270,18 +270,18 @@ def main(cfg):
 
         # VALID, TEST 평가도 individual_model에 따라 분기
         if cfg.DATASET.individual_model:
-            val_metrics = test_dl(
-                model          = models, 
-                dataloader     = val_dataloader, 
-                criterion      = criterion,
-                log_eval_iter  = cfg.TRAIN.log_eval_iter,
-                name           = 'VALID',
-                pre_training   = cfg.TRAIN.pre_training,
-                savedir        = savedir,
-                accelerator    = accelerator,
-                model_name     = cfg.MODEL.modelname,
-                return_output  = False
-            )
+            # val_metrics = test_dl(
+            #     model          = models, 
+            #     dataloader     = val_dataloader, 
+            #     criterion      = criterion,
+            #     log_eval_iter  = cfg.TRAIN.log_eval_iter,
+            #     name           = 'VALID',
+            #     pre_training   = cfg.TRAIN.pre_training,
+            #     savedir        = savedir,
+            #     accelerator    = accelerator,
+            #     model_name     = cfg.MODEL.modelname,
+            #     return_output  = False
+            # )
             
             test_metrics = test_dl(
                 model          = models, 
@@ -293,7 +293,7 @@ def main(cfg):
                 savedir        = savedir,
                 accelerator    = accelerator,
                 model_name     = cfg.MODEL.modelname,
-                return_output  = False
+                return_output  = True
             )
         else:
             val_metrics = test_dl(
@@ -319,7 +319,7 @@ def main(cfg):
                 savedir        = savedir,
                 accelerator    = accelerator,
                 model_name     = cfg.MODEL.modelname,
-                return_output  = False
+                return_output  = True
             )
 
         accelerator.wait_for_everyone()
@@ -327,6 +327,17 @@ def main(cfg):
             test_metrics = {str(key): value for key, value in test_metrics.items()}
             _logger.info('test_metrics: {}'.format(test_metrics))
             json.dump(test_metrics, open(os.path.join(savedir, 'test_results.json'),'w'), indent='\t', cls=Float32Encoder)
+
+            # 모든 작업 완료 후 .pt 파일 삭제
+            if cfg.DEFAULT.del_pt:
+                import glob
+                pt_files = glob.glob(os.path.join(savedir, "*.pt"))
+                for pt_file in pt_files:
+                    try:
+                        os.remove(pt_file)
+                        print(f"[INFO] Deleted: {pt_file}")
+                    except Exception as e:
+                        print(f"[WARNING] Failed to delete {pt_file}: {e}")
 
 if __name__=='__main__':
     cfg = parser()

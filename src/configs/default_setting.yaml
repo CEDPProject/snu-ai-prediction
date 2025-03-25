@@ -1,6 +1,7 @@
 DEFAULT:
   exp_name: KETI_weather_prediction
   seed: 42
+  del_pt: False
 
 DATASET:
   datadir: ../data
@@ -18,13 +19,13 @@ DATASET:
   align_time: False
   lead_time_align: False
   target: power
-  seq_len: 24
+  seq_len: 1
   pred_len: 1
   c_out: 1
   ignore_feature: ['SWDDIR', 'NWP_TP_CD']
 
 TRAIN:
-  epoch: 1
+  epoch: 25
   ckp_metric: loss
   eval_epochs: 1
   log_epochs: 1
