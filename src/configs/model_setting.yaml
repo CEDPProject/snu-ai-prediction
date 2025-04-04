@@ -34,10 +34,7 @@ iTransformer:
   n_heads: 8
   activation: gelu
 
-
-
-
-# ML Models
+############# ML Models #############
 
 MLModelEnsemble:
   selected_models: svr dt rf
@@ -49,7 +46,7 @@ MLModelEnsemble:
   dt_max_depth: 10
 
 MLpycaret:
-  selected_models: ['lightgbm']
+  selected_models: ['rf', 'et', 'gbr', 'lightgbm']
   enable_tuning: False
   tuning_iter: 10
   optimize_metric: 'MSE'

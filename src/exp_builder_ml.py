@@ -8,6 +8,9 @@ from omegaconf import OmegaConf
 from sklearn.model_selection import ParameterGrid
 import os
 
+def clamp_predictions(predictions):
+    return np.maximum(predictions, 0)
+
 def merge_predictions(predictions, group_key, eval_merge_grp, category_name=None):
     """
     Merge predictions by averaging based on a single group_key or its prefix if needed.
@@ -46,6 +49,7 @@ def training_ml(model_class, trn_loader, eval_merge_grp=False, category_name=Non
 
             # Prediction and metric calculation
             predictions = model_instance.model.predict(train_x)
+            predictions = clamp_predictions(predictions)
 
             if eval_merge_grp:
                 print(f"Merging predictions for {area_grp_id}")
@@ -90,6 +94,7 @@ def test_ml(model_dict, tst_loader, eval_merge_grp=False, category_name=None):
 
             # Prediction
             predictions = model_instance.model.predict(test_x)
+            predictions = clamp_predictions(predictions)
 
             if eval_merge_grp:
                 # Group key handling
