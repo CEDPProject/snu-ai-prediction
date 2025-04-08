@@ -66,7 +66,7 @@ def training_dl(model, trainloader, validloader, criterion, optimizer, accelerat
                 inputs = item['inputs'].float()
                 targets = item['targets'].float()
                 outputs = current_model(inputs)
-                outputs = torch.clamp(outputs, min=0)
+                # outputs = torch.clamp(outputs, min=0)
 
                 loss = criterion(outputs, targets)
                 
@@ -192,7 +192,7 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             targets = item['targets'].float()
                 
             outputs = current_model(inputs)
-            outputs = torch.clamp(outputs, min=0)
+            # outputs = torch.clamp(outputs, min=0)
             
             loss = criterion(outputs, targets)
             loss = accelerator.gather(loss).mean()
