@@ -34,22 +34,37 @@ def MSPE(pred, true):
     true = np.where(true == 0, 1e-5, true)  # Avoid division by zero
     return np.mean(np.square((pred - true) / true))
 
-def cal_metric(pred, true):
+def NMAE(pred, true, region):
+    capacity_dict = {
+    '6498': 0.496,   # 교래 태양광
+    '5375': 0.49,    # 종합경기장 태양광
+    '4594': 30.0,    # 동복북촌 풍력
+    '8711': 15.0     # 가시리 풍력
+    }
+    capacity = capacity_dict.get(region, None)
+
+    return np.mean(np.abs(pred - true) / capacity) * 100
+
+def cal_metric(pred, true, region=None):
     mae = MAE(pred, true)
     mse = MSE(pred, true)
     rmse = RMSE(pred, true)
     mape = MAPE(pred, true)
     mspe = MSPE(pred, true)
-    # rse = RSE(pred, true)
-    
-    metric_dict = {'MAE': mae,
-                   'MSE': mse,
-                   'RMSE': rmse,
-                   'MAPE': mape,
-                   'MSPE': mspe,}
-                #    'RSE': rse}
-    
-    print('mse: {:.4f}\t mae: {:.4f}\t mape: {:.4f}'.format(mse, mae, mape))
+    rse = RSE(pred, true)
+    nmae = NMAE(pred, true, region)
+
+    metric_dict = {
+        'MAE': round(mae, 4),
+        'MSE': round(mse, 4),
+        'RMSE': round(rmse, 4),
+        'MAPE': round(mape, 4),
+        'MSPE': round(mspe, 4),
+        'RSE': round(rse, 4),
+        'NMAE': round(nmae, 4)
+    }
+
+    print(f'nmae: {metric_dict["NMAE"]:.4f}\t mse: {metric_dict["MSE"]:.4f}\t mae: {metric_dict["MAE"]:.4f}\t rmse: {metric_dict["RMSE"]:.4f}')
     return metric_dict
 
 def version_build(accelerator, logdir: str, resume: int=None) -> str:

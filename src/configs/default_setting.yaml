@@ -25,7 +25,7 @@ DATASET:
   ignore_feature: ['SWDDIR', 'NWP_TP_CD']
 
 TRAIN:
-  epoch: 25
+  epoch: 1
   ckp_metric: loss
   eval_epochs: 1
   log_epochs: 1
@@ -37,6 +37,7 @@ TRAIN:
   fine_tuning_method: full
   grad_accum_steps: 1
   mixed_precision: 'no'
+  clamping: false
   wandb: 
     use: false
     wandb_iter: 500

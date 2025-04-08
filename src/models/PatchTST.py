@@ -33,16 +33,14 @@ class PatchTST(nn.Module):
     Paper link: https://arxiv.org/pdf/2211.14730.pdf
     """
 
-    def __init__(self, configs, patch_len=16, stride=8):
-        """
-        patch_len: int, patch len for patch_embedding
-        stride: int, stride for patch_embedding
-        """
+    def __init__(self, configs):
         super(PatchTST, self).__init__()
         self.c_out = configs.c_out
         self.seq_len = configs.seq_len
         self.pred_len = configs.pred_len
-        padding = stride
+        patch_len = configs.patch_len
+        stride = configs.stride
+        padding = configs.stride
 
         # patching and embedding
         self.patch_embedding = PatchEmbedding(

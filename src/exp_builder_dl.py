@@ -30,7 +30,7 @@ class AverageMeter:
 
 def training_dl(model, trainloader, validloader, criterion, optimizer, accelerator: Accelerator, 
                 epochs: int, eval_epochs: int, log_epochs: int, log_eval_iter: int, wandb_iter: int,
-                use_wandb: bool, ckp_metric: str, savedir: str, model_name: str, 
+                use_wandb: bool, ckp_metric: str, savedir: str, model_name: str, clamping: bool, 
                 pre_training: int, early_stopping_count: int, return_output: bool):
 
     early_stopping = EarlyStopping(patience=early_stopping_count)
@@ -66,10 +66,17 @@ def training_dl(model, trainloader, validloader, criterion, optimizer, accelerat
                 inputs = item['inputs'].float()
                 targets = item['targets'].float()
                 outputs = current_model(inputs)
-                # outputs = torch.clamp(outputs, min=0)
-
-                loss = criterion(outputs, targets)
                 
+                if clamping:
+                    outputs = torch.clamp(outputs, min=0)
+                
+                if model_name == 'TabM':
+                    k = outputs.shape[-1]
+                    outputs = outputs.flatten(0, 1)
+                    targets = targets.repeat_interleave(k)
+                
+                loss = criterion(outputs, targets)
+
                 accelerator.backward(loss)
                 current_optimizer.step()
                 current_optimizer.zero_grad()
@@ -111,6 +118,7 @@ def training_dl(model, trainloader, validloader, criterion, optimizer, accelerat
                         pre_training              = pre_training,
                         savedir                   = savedir,
                         model_name                = model_name,
+                        clamping                  = clamping,
                         accelerator               = accelerator,
                         return_output             = False,
                         return_avg                = True,
@@ -163,7 +171,7 @@ def training_dl(model, trainloader, validloader, criterion, optimizer, accelerat
 
 
 def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training: int, log_eval_iter: int, 
-            savedir: str, model_name: str, name: str = 'TEST', return_output: bool = True, return_avg: bool = True, 
+            savedir: str, model_name: str, clamping: bool, name: str = 'TEST', return_output: bool = True, return_avg: bool = True, 
             return_individual_outputs: bool = False):
     
     _logger.info(f'\n[🔍 Start {name} Evaluation]')
@@ -192,10 +200,18 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             targets = item['targets'].float()
                 
             outputs = current_model(inputs)
-            # outputs = torch.clamp(outputs, min=0)
-            
+
+            if clamping:
+                outputs = torch.clamp(outputs, min=0)
+        
+            if model_name == 'TabM':
+                k = outputs.shape[-1]
+                outputs = outputs.flatten(0, 1)
+                targets = targets.repeat_interleave(k)
+                
             loss = criterion(outputs, targets)
             loss = accelerator.gather(loss).mean()
+
             
             outputs, targets = accelerator.gather_for_metrics((outputs.contiguous(), targets.contiguous()))
             losses_m.update(loss.item(), n=targets.size(0))
@@ -235,12 +251,9 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             region_outputs.setdefault(region, []).append(outputs)
             region_targets.setdefault(region, []).append(total_targets[(model_key, area_grp_id)])
         for region, out_list in region_outputs.items():
-            # np.concatenate로 배열들을 합친 후, axis=0으로 평균 계산
-            # region_avg_output = np.mean(np.concatenate(out_list, axis=0), axis=0)
-            # region_avg_target = np.mean(np.concatenate(region_targets[region], axis=0), axis=0)
             region_avg_output = np.concatenate(out_list, axis=0)
             region_avg_target = np.concatenate(region_targets[region], axis=0)
-            region_metrics = cal_metric(pred=region_avg_output, true=region_avg_target)
+            region_metrics = cal_metric(pred=region_avg_output, true=region_avg_target, region=region)
             for k, v in region_metrics.items():
                 results[f'avg_{region}_{k}'] = v
             _logger.info(f"📊 Average {name} Metrics for region {region}: {region_metrics}")
@@ -248,7 +261,8 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
     if return_individual_outputs:
         individual_metrics = {}
         for (model_key, area_grp_id), outputs in total_outputs.items():
-            metrics = cal_metric(pred=outputs, true=total_targets[(model_key, area_grp_id)])
+            region = area_grp_id.split('_')[0]
+            metrics = cal_metric(pred=outputs, true=total_targets[(model_key, area_grp_id)], region=region)
             for k, v in metrics.items():
                 results[f'{model_key}_{area_grp_id}_{k}'] = v
             individual_metrics[(model_key, area_grp_id)] = metrics

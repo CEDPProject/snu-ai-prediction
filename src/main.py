@@ -234,6 +234,7 @@ def main(cfg):
                 ckp_metric           = cfg.TRAIN.ckp_metric, 
                 savedir              = savedir,
                 model_name           = cfg.MODEL.modelname,
+                clamping             = cfg.TRAIN.clamping,
                 early_stopping_count = cfg.TRAIN.early_stopping_count,
                 pre_training         = cfg.TRAIN.pre_training,
                 return_output        = False
@@ -255,6 +256,7 @@ def main(cfg):
                 ckp_metric           = cfg.TRAIN.ckp_metric, 
                 savedir              = savedir,
                 model_name           = cfg.MODEL.modelname,
+                clamping             = cfg.TRAIN.clamping,
                 early_stopping_count = cfg.TRAIN.early_stopping_count,
                 pre_training         = cfg.TRAIN.pre_training,
                 return_output        = False
@@ -270,18 +272,19 @@ def main(cfg):
 
         # VALID, TEST 평가도 individual_model에 따라 분기
         if cfg.DATASET.individual_model:
-            # val_metrics = test_dl(
-            #     model          = models, 
-            #     dataloader     = val_dataloader, 
-            #     criterion      = criterion,
-            #     log_eval_iter  = cfg.TRAIN.log_eval_iter,
-            #     name           = 'VALID',
-            #     pre_training   = cfg.TRAIN.pre_training,
-            #     savedir        = savedir,
-            #     accelerator    = accelerator,
-            #     model_name     = cfg.MODEL.modelname,
-            #     return_output  = False
-            # )
+            val_metrics = test_dl(
+                model          = models, 
+                dataloader     = val_dataloader, 
+                criterion      = criterion,
+                log_eval_iter  = cfg.TRAIN.log_eval_iter,
+                name           = 'VALID',
+                pre_training   = cfg.TRAIN.pre_training,
+                savedir        = savedir,
+                accelerator    = accelerator,
+                model_name     = cfg.MODEL.modelname,
+                clamping       = cfg.TRAIN.clamping,
+                return_output  = False
+            )
             
             test_metrics = test_dl(
                 model          = models, 
@@ -293,7 +296,8 @@ def main(cfg):
                 savedir        = savedir,
                 accelerator    = accelerator,
                 model_name     = cfg.MODEL.modelname,
-                return_output  = True
+                clamping       = cfg.TRAIN.clamping,
+                return_output  = False
             )
         else:
             val_metrics = test_dl(
@@ -306,6 +310,7 @@ def main(cfg):
                 savedir        = savedir,
                 accelerator    = accelerator,
                 model_name     = cfg.MODEL.modelname,
+                clamping       = cfg.TRAIN.clamping,
                 return_output  = False
             )
             
@@ -319,7 +324,8 @@ def main(cfg):
                 savedir        = savedir,
                 accelerator    = accelerator,
                 model_name     = cfg.MODEL.modelname,
-                return_output  = True
+                clamping       = cfg.TRAIN.clamping,
+                return_output  = False
             )
 
         accelerator.wait_for_everyone()
