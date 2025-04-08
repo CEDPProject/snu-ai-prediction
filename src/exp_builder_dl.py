@@ -253,7 +253,7 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
         for region, out_list in region_outputs.items():
             region_avg_output = np.concatenate(out_list, axis=0)
             region_avg_target = np.concatenate(region_targets[region], axis=0)
-            region_metrics = cal_metric(pred=region_avg_output, true=region_avg_target, region=region)
+            region_metrics = cal_metric(pred=region_avg_output, true=region_avg_target, region=region.split('_')[0])
             for k, v in region_metrics.items():
                 results[f'avg_{region}_{k}'] = v
             _logger.info(f"📊 Average {name} Metrics for region {region}: {region_metrics}")
@@ -261,7 +261,6 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
     if return_individual_outputs:
         individual_metrics = {}
         for (model_key, area_grp_id), outputs in total_outputs.items():
-            region = area_grp_id.split('_')[0]
             metrics = cal_metric(pred=outputs, true=total_targets[(model_key, area_grp_id)], region=region)
             for k, v in metrics.items():
                 results[f'{model_key}_{area_grp_id}_{k}'] = v
