@@ -25,7 +25,7 @@ def merge_predictions(predictions, group_key, eval_merge_grp, category_name=None
     merged_results = {group: predictions}
     return {group: np.mean(merged_results[group], axis=0)}
 
-def training_ml(model_class, trn_loader, eval_merge_grp=False, category_name=None):
+def training_ml(model_class, trn_loader, clamping, eval_merge_grp=False, category_name=None):
     """
     Train machine learning models for each dataset combination in the training loader.
     """
@@ -49,7 +49,8 @@ def training_ml(model_class, trn_loader, eval_merge_grp=False, category_name=Non
 
             # Prediction and metric calculation
             predictions = model_instance.model.predict(train_x)
-            predictions = clamp_predictions(predictions)
+            if clamping:
+                predictions = clamp_predictions(predictions)
 
             if eval_merge_grp:
                 print(f"Merging predictions for {area_grp_id}")
@@ -62,7 +63,7 @@ def training_ml(model_class, trn_loader, eval_merge_grp=False, category_name=Non
 
     return model_dict
 
-def test_ml(model_dict, tst_loader, eval_merge_grp=False, category_name=None):
+def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_name=None):
     """
     Test machine learning models for each dataset combination in the test loader.
     Supports grouped evaluation and prediction merging.
@@ -94,7 +95,8 @@ def test_ml(model_dict, tst_loader, eval_merge_grp=False, category_name=None):
 
             # Prediction
             predictions = model_instance.model.predict(test_x)
-            predictions = clamp_predictions(predictions)
+            if clamping:
+                predictions = clamp_predictions(predictions)
 
             if eval_merge_grp:
                 # Group key handling
@@ -120,6 +122,8 @@ def test_ml(model_dict, tst_loader, eval_merge_grp=False, category_name=None):
 
             # Use merge_predictions to average results (if needed)
             merged_predictions = merge_predictions(np.array(all_predictions), group_key, eval_merge_grp, category_name)
+            if clamping:
+                merged_predictions = clamp_predictions(merged_predictions)
             all_truths = np.array(all_truths)
 
             # Calculate metrics for the merged group
@@ -142,6 +146,7 @@ def training_ml_pycaret(
     search_library='optuna',
     search_algorithm='random',  # 기본값은 'random'
     early_stopping=False,
+    clamping=False,
     n_jobs=8,
     category_name='solar'
 ):
@@ -303,6 +308,7 @@ def test_ml_pycaret(
     target_column="QGEN",
     save_dir="./saved_model/",
     eval_merge_grp = True,
+    clamping = False,
     category_name = 'solar'
 ):
     """
@@ -345,6 +351,10 @@ def test_ml_pycaret(
                     # Extract predicted values
                     pred_values = predictions["prediction_label"].values
                     true_values = predictions[target_column].values
+
+                    # Clamp predictions if needed
+                    if clamping:
+                        pred_values = clamp_predictions(pred_values)
 
                     # Calculate metrics directly for this model
                     metrics = cal_metric(pred=pred_values, true=true_values)

@@ -130,6 +130,7 @@ def main(cfg):
                                     grid_model              = cfg.MODELSETTING.model_grids,
                                     k_fold_num              = cfg.MODELSETTING.k_fold_num,
                                     category_name           = cfg.DATASET.category_name,
+                                    clamping                = cfg.TRAIN.clamping,
                                     ignore_features_list    = cfg.DATASET.ignore_feature
                                     )
             
@@ -138,19 +139,22 @@ def main(cfg):
                                     feature_names_dict,
                                     save_dir = savedir,
                                     eval_merge_grp = True, 
-                                    category_name = cfg.DATASET.category_name)
+                                    clamping       = cfg.TRAIN.clamping,
+                                    category_name  = cfg.DATASET.category_name)
             _logger.info('Pycaret done!')
             exit()
         else:
             model_dict = training_ml(model, 
                                     trn_dataloader,
                                     eval_merge_grp = True, 
-                                    category_name = cfg.DATASET.category_name)
+                                    clamping       = cfg.TRAIN.clamping,
+                                    category_name  = cfg.DATASET.category_name)
             
             test_metrics = test_ml(model_dict, 
                                     tst_dataloader, 
                                     eval_merge_grp = True, 
-                                    category_name = cfg.DATASET.category_name)
+                                    clamping       = cfg.TRAIN.clamping,
+                                    category_name  = cfg.DATASET.category_name)
     else:
         # 모델 및 옵티마이저 생성 부분 (main 코드)
         if cfg.DATASET.individual_model:
