@@ -1,8 +1,8 @@
 export CUDA_VISIBLE_DEVICES=0
 
-CATEGORY_NAMES=("solar")
-MODELS=("DLinear" "PatchTST" "iTransformer")
-SEQ_LENS=(24)
+CATEGORY_NAMES=("solar" "wind")
+MODELS=("NCART" "TabM")
+SEQ_LENS=(1)
 
 for CATEGORY_NAME in "${CATEGORY_NAMES[@]}"; do
     for MODEL in "${MODELS[@]}"; do

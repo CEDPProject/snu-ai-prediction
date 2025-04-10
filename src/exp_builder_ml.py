@@ -103,8 +103,9 @@ def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_nam
                 group_key = area_grp_id.split('_')[0]  # Example: "8711_001" → "8711"
                 grouped_predictions[group_key].append((predictions, test_y))
             else:
+                region = area_grp_id.split('_')[0] 
                 # Calculate metrics without merging
-                metrics = cal_metric(pred=predictions, true=test_y)
+                metrics = cal_metric(pred=predictions, true=test_y, region=region)
                 print(f"Metrics for ({model_key}, {area_grp_id}): {metrics}")
                 results[(model_key, area_grp_id)] = metrics
 
@@ -125,9 +126,9 @@ def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_nam
             if clamping:
                 merged_predictions = clamp_predictions(merged_predictions)
             all_truths = np.array(all_truths)
-
+            region = group_key.split('_')[0] 
             # Calculate metrics for the merged group
-            metrics = cal_metric(pred=merged_predictions[group_key], true=all_truths)
+            metrics = cal_metric(pred=merged_predictions[group_key], true=all_truths, region=region)
             print(f"Metrics for group {group_key}: {metrics}")
             results[group_key] = metrics
 
@@ -355,9 +356,9 @@ def test_ml_pycaret(
                     # Clamp predictions if needed
                     if clamping:
                         pred_values = clamp_predictions(pred_values)
-
+                    region = area_grp_id.split('_')[0]
                     # Calculate metrics directly for this model
-                    metrics = cal_metric(pred=pred_values, true=true_values)
+                    metrics = cal_metric(pred=pred_values, true=true_values, region=region)
                     metrics_results.append({
                         'model_key': model_key,
                         'area_grp_id': area_grp_id,

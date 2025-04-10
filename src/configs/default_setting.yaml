@@ -37,7 +37,7 @@ TRAIN:
   fine_tuning_method: full
   grad_accum_steps: 1
   mixed_precision: 'no'
-  clamping: false
+  clamping: true
   wandb: 
     use: false
     wandb_iter: 500
