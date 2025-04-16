@@ -6,3 +6,4 @@ from .iTransformer import iTransformer
 from .PatchTST import PatchTST
 from .NCART import NCART
 from .TabM import TabM
+from .TabPFN import MLTabPFN

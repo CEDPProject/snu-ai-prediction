@@ -36,11 +36,12 @@ def MSPE(pred, true):
 
 def NMAE(pred, true, region):
     capacity_dict = {
-    '6498': 0.496,   # 교래 태양광
-    '5375': 0.49,    # 종합경기장 태양광
-    '4593': 30.0,    # 동복북촌 풍력
-    '8711': 15.0     # 가시리 풍력
+        6498: 0.496,   # 교래 태양광
+        5375: 0.49,    # 종합경기장 태양광
+        4594: 2.0,    # 동복북촌 풍력
+        8711: 1.153     # 가시리 풍력
     }
+
     capacity = capacity_dict.get(region, None)
 
     return np.mean(np.abs(pred - true) / capacity) * 100
