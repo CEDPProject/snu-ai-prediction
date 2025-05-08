@@ -308,92 +308,91 @@ def test_ml_pycaret(
     feature_names_dict,
     target_column="QGEN",
     save_dir="./saved_model/",
-    eval_merge_grp = True,
-    clamping = False,
-    category_name = 'solar'
+    eval_merge_grp=True,
+    clamping=False,
+    category_name='solar'
 ):
-    """
-    Test trained PyCaret models on given test data and calculate metrics.
-    Record predictions and save the results, including MSE, MAE, MAPE, and tuned hyperparameters for each model and group.
-    """
-    metrics_results = []  # List to store metrics for all models
+    from collections import defaultdict
+    import numpy as np
+    import pandas as pd
+    import os
+    from pycaret.regression import predict_model
 
-    for idx, (model_key, area_dict) in enumerate(tst_loader.items(), start=1):
-        for area_grp_id, data_dict in area_dict.items():
-            print(f"Testing ({model_key}, {area_grp_id}) ({idx}/{len(tst_loader)})")
-            
-            # Combine test_x and test_y into a single DataFrame
-            test_x = data_dict["test_x"]
-            test_x = test_x.drop(columns=["AREA_GRP_ID"], errors="ignore")
-            test_y = data_dict["test_y"][target_column]
-            
-            # Align test features with training features
-            expected_features = feature_names_dict.get((model_key, area_grp_id), [])
-            for feature in expected_features:
-                if feature not in test_x.columns:
-                    test_x[feature] = 0  # Add missing feature with default value
-                    
-                # Remove extra features
-            extra_features = set(test_x.columns) - set(expected_features)
-            if extra_features:
-                test_x = test_x.drop(columns=list(extra_features))
+    region_preds_by_model = defaultdict(lambda: defaultdict(list))
+    region_trues_by_model = defaultdict(lambda: defaultdict(list))
+    model_names_by_key_region = {}  # (model_key, region) -> model_name 저장용
 
-            # Reorder columns to match training features
-            test_x = test_x[expected_features]
+    # STEP 1: Run prediction and collect results
+    for (m_key, a_grp_id, model_name, params), trained_model in all_trained_models.items():
+        model_key = m_key
+        region = a_grp_id.split('_')[0]
 
-            test_data = pd.concat([test_x, test_y], axis=1)
+        # 존재하지 않는 조합 예외 처리
+        if model_key not in tst_loader or a_grp_id not in tst_loader[model_key]:
+            continue
 
-            # Test all models trained for this group
-            for (m_key, a_grp_id, model_name, params), trained_model in all_trained_models.items():
-                if (m_key, a_grp_id) == (model_key, area_grp_id):
-                    print(f"Testing model: {model_name} for ({model_key}, {area_grp_id})")
-                    predictions = predict_model(trained_model, data=test_data, verbose=False)
+        data_dict = tst_loader[model_key][a_grp_id]
+        test_x = data_dict["test_x"].drop(columns=["AREA_GRP_ID"], errors="ignore")
+        test_y = data_dict["test_y"][target_column]
 
-                    # Extract predicted values
-                    pred_values = predictions["prediction_label"].values
-                    true_values = predictions[target_column].values
+        expected_features = feature_names_dict.get((model_key, a_grp_id), [])
+        for feature in expected_features:
+            if feature not in test_x.columns:
+                test_x[feature] = 0
+        extra_features = set(test_x.columns) - set(expected_features)
+        if extra_features:
+            test_x = test_x.drop(columns=list(extra_features))
 
-                    # Clamp predictions if needed
-                    if clamping:
-                        pred_values = clamp_predictions(pred_values)
-                    region = area_grp_id.split('_')[0]
-                    # Calculate metrics directly for this model
-                    metrics = cal_metric(pred=pred_values, true=true_values, region=region)
-                    metrics_results.append({
-                        'model_key': model_key,
-                        'area_grp_id': area_grp_id,
-                        'model_name': model_name,
-                        'MSE': metrics['MSE'],
-                        'MAE': metrics['MAE'],
-                        'MAPE': metrics['MAPE'],
-                        'params': params  # Save tuned hyperparameters
-                    })
+        test_x = test_x[expected_features]
+        test_data = pd.concat([test_x, test_y], axis=1)
 
-    # Save individual results
-    metrics_results_df = pd.DataFrame(metrics_results)
-    metrics_results_df.to_csv(f'{save_dir}/test_results_with_tuning.csv', index=False)
+        predictions = predict_model(trained_model, data=test_data, verbose=False)
 
-    # Check if category_name is 'wind' and extract prefix if needed
-    if category_name == 'wind':
-        metrics_results_df['area_grp_prefix'] = metrics_results_df['area_grp_id'].apply(lambda x: x.split('_')[0])
-        group_column = 'area_grp_prefix'
-    else:
-        group_column = 'area_grp_id'
+        pred_values = predictions["prediction_label"].values
+        true_values = predictions[target_column].values
+        if clamping:
+            pred_values = np.clip(pred_values, 0, None)
 
-    # Group by 'model_name' and the appropriate group column
-    averaged_metrics = (
-        metrics_results_df.groupby(['model_name', group_column], as_index=False)
-        .agg({
-            'MSE': 'mean',
-            'MAE': 'mean',
-            'MAPE': 'mean',
-            'model_key': lambda x: ', '.join(set(x)),
-            'params': 'first'
-        })
+        region_preds_by_model[model_key][region].append(pred_values)
+        region_trues_by_model[model_key][region].append(true_values)
+
+        model_names_by_key_region[(model_key, region)] = model_name
+
+    # STEP 2: Compute metrics per model_key and region
+    results = []
+    for model_key in region_preds_by_model:
+        for region in region_preds_by_model[model_key]:
+            all_preds = np.sum(region_preds_by_model[model_key][region], axis=0)
+            all_trues = np.sum(region_trues_by_model[model_key][region], axis=0)
+            metrics = cal_metric(pred=all_preds, true=all_trues, region=region)
+            results.append({
+                'model_name': model_names_by_key_region.get((model_key, region), 'unknown'),
+                'model_key': model_key,
+                'region': region,
+                **metrics
+            })
+
+    results_df = pd.DataFrame(results)
+    results_df.to_csv(os.path.join(save_dir, "region_model_metrics.csv"), index=False)
+
+    # STEP 3: Compute average across models for each region
+    metric_cols = ['NMAE', 'MAE', 'MSE', 'RMSE', 'MAPE', 'MSPE', 'RSE']
+    region_avg = (
+        results_df
+        .groupby('region', as_index=False)
+        .agg(
+            {
+                **{col: 'mean' for col in metric_cols},
+                'model_name': lambda x: ', '.join(sorted(set(x)))  # 모델명 합치기
+            }
+        )
+        .rename(columns=lambda x: f'avg_{x}' if x in metric_cols else x)
     )
+    
+    # 👉 컬럼 순서: model_name, region, avg_MAE, ...
+    first_cols = ['model_name', 'region']
+    other_cols = [col for col in region_avg.columns if col not in first_cols]
+    region_avg = region_avg[first_cols + other_cols]
 
-    # Save averaged results
-    averaged_metrics.to_csv(f'{save_dir}/test_results_with_tuning_averaged.csv', index=False)
-
-    return averaged_metrics
-
+    region_avg.to_csv(os.path.join(save_dir, "region_avg_metrics_across_models.csv"), index=False)
+    return region_avg

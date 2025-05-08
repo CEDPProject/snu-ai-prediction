@@ -186,91 +186,133 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
     end_time = time.time()
     wandb_iteration = 0
 
-    for (model_key, area_grp_id), loader in dataloader.items():
-        _logger.info(f"🧪 Testing on {model_key} - {area_grp_id}")
-        outputs_list, targets_list = [], []
-        if isinstance(model, dict):
-            current_model = model[(model_key, area_grp_id)]
-        else:
-            current_model = model
-        for idx, item in enumerate(loader):
-            data_time_m.update(time.time() - end_time)
-
-            inputs = item['inputs'].float()
-            targets = item['targets'].float()
-                
-            outputs = current_model(inputs)
-
-            if clamping:
-                outputs = torch.clamp(outputs, min=0)
-        
-            if model_name == 'TabM':
-                k = outputs.shape[-1]
-                outputs = outputs.flatten(0, 1)
-                targets = targets.repeat_interleave(k)
-                
-            loss = criterion(outputs, targets)
-            loss = accelerator.gather(loss).mean()
-
+    with torch.no_grad():
+        for (model_key, area_grp_id), loader in dataloader.items():
+            _logger.info(f"🧪 Testing on {model_key} - {area_grp_id}")
+            outputs_list, targets_list = [], []
+            if isinstance(model, dict):
+                current_model = model[(model_key, area_grp_id)]
+            else:
+                current_model = model
+            current_model.eval()
             
-            outputs, targets = accelerator.gather_for_metrics((outputs.contiguous(), targets.contiguous()))
-            losses_m.update(loss.item(), n=targets.size(0))
-            
-            outputs_list.append(outputs.detach().cpu().numpy())
-            targets_list.append(targets.detach().cpu().numpy())
+            for idx, item in enumerate(loader):
+                data_time_m.update(time.time() - end_time)
 
-            batch_time_m.update(time.time() - end_time)
-
-            if (idx+1) % log_eval_iter == 0:
-                _logger.info('{name} [{:>4d}/{}] Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
-                            'Time: {batch_time.val:.3f}s, {rate:>7.2f}/s ({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s) '
-                            'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(
-                            (idx+1), 
-                            len(loader),
-                            name       = name,
-                            loss       = losses_m, 
-                            batch_time = batch_time_m,
-                            rate       = inputs.size(0) / batch_time_m.val,
-                            rate_avg   = inputs.size(0) / batch_time_m.avg,
-                            data_time  = data_time_m))
+                inputs = item['inputs'].float()
+                targets = item['targets'].float()
                     
-            end_time = time.time()
+                outputs = current_model(inputs)
 
-        total_outputs[(model_key, area_grp_id)] = np.concatenate(outputs_list, axis=0)
-        total_targets[(model_key, area_grp_id)] = np.concatenate(targets_list, axis=0)
-    
-    results = OrderedDict([('loss', losses_m.avg)])
+                if clamping:
+                    outputs = torch.clamp(outputs, min=0)
+            
+                if model_name == 'TabM':
+                    k = outputs.shape[-1]
+                    outputs = outputs.flatten(0, 1)
+                    targets = targets.repeat_interleave(k)
+                    
+                loss = criterion(outputs, targets)
+                loss = accelerator.gather(loss).mean()
+
+                
+                outputs, targets = accelerator.gather_for_metrics((outputs.contiguous(), targets.contiguous()))
+                losses_m.update(loss.item(), n=targets.size(0))
+                
+                outputs_list.append(outputs.detach().cpu().numpy())
+                targets_list.append(targets.detach().cpu().numpy())
+
+                batch_time_m.update(time.time() - end_time)
+
+                if (idx+1) % log_eval_iter == 0:
+                    _logger.info('{name} [{:>4d}/{}] Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
+                                'Time: {batch_time.val:.3f}s, {rate:>7.2f}/s ({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s) '
+                                'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(
+                                (idx+1), 
+                                len(loader),
+                                name       = name,
+                                loss       = losses_m, 
+                                batch_time = batch_time_m,
+                                rate       = inputs.size(0) / batch_time_m.val,
+                                rate_avg   = inputs.size(0) / batch_time_m.avg,
+                                data_time  = data_time_m))
+                        
+                end_time = time.time()
+
+            total_outputs[(model_key, area_grp_id)] = np.concatenate(outputs_list, axis=0)
+            total_targets[(model_key, area_grp_id)] = np.concatenate(targets_list, axis=0)
+        
+        results = OrderedDict([('loss', losses_m.avg)])
 
     if return_avg:
-        # 동일 지역(두 번째 요소의 접두어)을 기준으로 그룹화하여 평균 계산
-        region_outputs = {}
-        region_targets = {}
-        for (model_key, area_grp_id), outputs in total_outputs.items():
-            # area_grp_id에 '_'가 있으면 접두어 추출, 없으면 그대로 사용
-            region = area_grp_id.split('_')[0]
-            region_outputs.setdefault(region, []).append(outputs)
-            region_targets.setdefault(region, []).append(total_targets[(model_key, area_grp_id)])
-        for region, out_list in region_outputs.items():
-            region_avg_output = np.concatenate(out_list, axis=0)
-            region_avg_target = np.concatenate(region_targets[region], axis=0)
-            region_metrics = cal_metric(pred=region_avg_output, true=region_avg_target, region=region.split('_')[0])
-            for k, v in region_metrics.items():
-                results[f'avg_{region}_{k}'] = v
-            _logger.info(f"📊 Average {name} Metrics for region {region}: {region_metrics}")
+        import pandas as pd
+        from collections import defaultdict
 
+        # === 지역별 model_key별 누적 구조 생성 ===
+        region_preds_by_model = defaultdict(lambda: defaultdict(list))
+        region_trues_by_model = defaultdict(lambda: defaultdict(list))
+
+        for (model_key, area_grp_id), outputs in total_outputs.items():
+            region = area_grp_id.split('_')[0]
+            region_preds_by_model[model_key][region].append(outputs)
+            region_trues_by_model[model_key][region].append(total_targets[(model_key, area_grp_id)])
+
+        region_model_metrics_list = []
+        for model_key in region_preds_by_model:
+            for region in region_preds_by_model[model_key]:
+                # 각 지역-모델 조합에서 시점별 합산
+                summed_pred = np.sum(region_preds_by_model[model_key][region], axis=0)
+                summed_true = np.sum(region_trues_by_model[model_key][region], axis=0)
+
+                # 지표 계산 (정격출력 10% 이상인 시점만 사용)
+                region_metrics = cal_metric(pred=summed_pred, true=summed_true, region=region)
+
+                # 결과 저장
+                for k, v in region_metrics.items():
+                    results[f'{model_key}_{region}_{k}'] = v
+
+                region_model_metrics_list.append({
+                    'model_key': model_key,
+                    'region': region,
+                    **region_metrics
+                })
+
+                _logger.info(f"📊 {name} Metrics for model {model_key} - region {region}: {region_metrics}")
+
+        # === DataFrame 저장 ===
+        region_model_df = pd.DataFrame(region_model_metrics_list)
+        region_model_df.to_csv(os.path.join(savedir, f"{name}_region_model_metrics.csv"), index=False)
+
+        # === 모델별 지역 평균 지표 계산 ===
+        metric_cols = ['MAE', 'MSE', 'RMSE', 'MAPE', 'MSPE', 'RSE', 'NMAE']
+        region_avg_df = (
+            region_model_df
+            .groupby('region', as_index=False)[metric_cols]
+            .mean()
+            .rename(columns=lambda x: f'avg_{x}' if x != 'region' else x)
+        )
+        region_avg_df.to_csv(os.path.join(savedir, f"{name}_region_avg_metrics.csv"), index=False)
+
+        # 결과 딕셔너리에 포함
+        for _, row in region_avg_df.iterrows():
+            for k in ['avg_MAE', 'avg_MSE', 'avg_RMSE', 'avg_MAPE', 'avg_MSPE', 'avg_RSE', 'avg_NMAE']:
+                results[f'{row["region"]}_{k}'] = row[k]
+
+    # (기존 개별 출력 로직은 유지 가능)
     if return_individual_outputs:
         individual_metrics = {}
         for (model_key, area_grp_id), outputs in total_outputs.items():
+            region = area_grp_id.split('_')[0]
             metrics = cal_metric(pred=outputs, true=total_targets[(model_key, area_grp_id)], region=region)
             for k, v in metrics.items():
                 results[f'{model_key}_{area_grp_id}_{k}'] = v
             individual_metrics[(model_key, area_grp_id)] = metrics
         _logger.info(f"📊 Individual {name} Metrics: {individual_metrics}")
-    
+
     accelerator.wait_for_everyone()
     if accelerator.is_main_process and return_output:
         os.makedirs(savedir, exist_ok=True)
         np.save(os.path.join(savedir, f'{name}_total_outputs.npy'), total_outputs)
         np.save(os.path.join(savedir, f'{name}_total_targets.npy'), total_targets)
-    
+
     return results

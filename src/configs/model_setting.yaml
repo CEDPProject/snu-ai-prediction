@@ -72,7 +72,7 @@ MLModelEnsemble:
   dt_max_depth: 10
 
 MLpycaret:
-  selected_models: ['rf', 'et', 'gbr', 'lightgbm']
+  selected_models: ['lr']
   enable_tuning: False
   tuning_iter: 10
   optimize_metric: 'MSE'

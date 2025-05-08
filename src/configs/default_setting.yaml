@@ -12,7 +12,7 @@ DATASET:
   shuffle: true
   pin_memory: true
   drop_last: true
-  category_name: solar
+  category_name: wind
   data_version: version2_241107
   input_structure: independence
   individual_model: True
@@ -25,7 +25,7 @@ DATASET:
   ignore_feature: ['SWDDIR', 'NWP_TP_CD']
 
 TRAIN:
-  epoch: 30
+  epoch: 1
   ckp_metric: loss
   eval_epochs: 1
   log_epochs: 1

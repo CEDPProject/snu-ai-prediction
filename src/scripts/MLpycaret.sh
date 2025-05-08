@@ -1,6 +1,6 @@
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
-CATEGORY_NAMES=("solar" "wind")
+CATEGORY_NAMES=("wind")
 MODELS=("MLpycaret")
 SEQ_LENS=(1)
 

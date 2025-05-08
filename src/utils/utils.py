@@ -36,10 +36,11 @@ def MSPE(pred, true):
 
 def NMAE(pred, true, region):
     capacity_dict = {
-        6498: 0.496,   # 교래 태양광
-        5375: 0.49,    # 종합경기장 태양광
-        4594: 2.0,    # 동복북촌 풍력
-        8711: 1.153     # 가시리 풍력
+        '6498': 0.496,   # 교래 태양광
+        '5375': 0.49,    # 종합경기장 태양광
+        '4593': 30.0,    # 동복북촌 풍력
+        '4594': 30.0,    # 동복북촌 풍력
+        '8711': 15.0     # 가시리 풍력
     }
 
     capacity = capacity_dict.get(region, None)
@@ -47,6 +48,25 @@ def NMAE(pred, true, region):
     return np.mean(np.abs(pred - true) / capacity) * 100
 
 def cal_metric(pred, true, region=None):
+    capacity_dict = {
+        '6498': 0.496,   # 교래 태양광
+        '5375': 0.49,    # 종합경기장 태양광
+        '4593': 30.0,    # 동복북촌 풍력
+        '4594': 30.0,    # 동복북촌 풍력
+        '8711': 15.0     # 가시리 풍력
+    }
+    
+    # 설비용량 10% 이상인 데이터만 평가
+    if region in capacity_dict:
+        capacity = capacity_dict[region]
+        valid_mask = true >= (capacity * 0.1)
+        pred = pred[valid_mask]
+        true = true[valid_mask]
+
+    if len(true) == 0:
+        print(f"[⚠️ Warning] No valid data points above 10% capacity for region: {region}")
+        return {k: float('nan') for k in ['MAE', 'MSE', 'RMSE', 'MAPE', 'MSPE', 'RSE', 'NMAE']}
+
     mae = MAE(pred, true)
     mse = MSE(pred, true)
     rmse = RMSE(pred, true)
@@ -56,13 +76,13 @@ def cal_metric(pred, true, region=None):
     nmae = NMAE(pred, true, region)
 
     metric_dict = {
+        'NMAE': round(nmae, 4),
         'MAE': round(mae, 4),
         'MSE': round(mse, 4),
         'RMSE': round(rmse, 4),
         'MAPE': round(mape, 4),
         'MSPE': round(mspe, 4),
-        'RSE': round(rse, 4),
-        'NMAE': round(nmae, 4)
+        'RSE': round(rse, 4)
     }
 
     print(f'nmae: {metric_dict["NMAE"]:.4f}\t mse: {metric_dict["MSE"]:.4f}\t mae: {metric_dict["MAE"]:.4f}\t rmse: {metric_dict["RMSE"]:.4f}')
