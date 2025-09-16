@@ -9,7 +9,8 @@ class WeatherPredictionDataset(Dataset):
                  input_structure: str = 'independence', 
                  type: str = 'train', 
                  seq_len: int = 12, 
-                 pred_len: int = 1):
+                 pred_len: int = 1,
+                 target_type: str = 'multi'):
         """
         시계열 데이터 예측을 위한 Dataset 클래스
         Args:
@@ -24,6 +25,7 @@ class WeatherPredictionDataset(Dataset):
         self.datasets = {'ECMWF': {}, 'LDAPS': {}}
         self.seq_len = seq_len
         self.pred_len = pred_len
+        self.target_type = target_type
 
         if input_structure == 'independence':
             for model_key in ['ECMWF', 'LDAPS']:
@@ -101,7 +103,11 @@ class WeatherPredictionDataset(Dataset):
         x_seq = dataset['inputs'].iloc[start_idx : start_idx + self.seq_len].values.astype(np.float32)
 
         # 예측할 타겟 시퀀스 생성 (pred_len 이후 값)
-        y_seq = dataset['targets']['QGEN'].iloc[start_idx + self.seq_len : start_idx + self.seq_len + self.pred_len].values.astype(np.float32)
+        # y_seq = dataset['targets']['QGEN'].iloc[start_idx + self.seq_len : start_idx + self.seq_len + self.pred_len].values.astype(np.float32)
+        if self.target_type == 'multi':
+            y_seq = dataset['targets']['QGEN'].iloc[start_idx : start_idx + self.seq_len].values.astype(np.float32)
+        elif self.target_type == 'uni':
+            y_seq = dataset['targets']['QGEN'].iloc[start_idx + self.seq_len].astype(np.float32)
 
         return {
             'inputs': torch.tensor(x_seq, dtype=torch.float32),

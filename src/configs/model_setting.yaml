@@ -72,15 +72,18 @@ MLModelEnsemble:
   dt_max_depth: 10
 
 MLpycaret:
-  selected_models: ['lr']
+  selected_models: ['rf', 'et', 'gbr', 'lightgbm']
   enable_tuning: False
   tuning_iter: 10
-  optimize_metric: 'MSE'
+  optimize_metric: 'MAE'
   search_library: 'scikit-learn'
   search_algorithm: 'grid'
   early_stopping: False
   n_jobs: 3
   k_fold_num: 5
+  ensemble:
+    enable: True,  # PyCaret 앙상블 활성화
+    types: ['blend', 'stack', 'bagging']  # 사용할 PyCaret 앙상블
   model_grids:
     svm:  # Support Vector Machine
       C: [0.1, 1, 10]
@@ -104,26 +107,24 @@ MLpycaret:
     huber:  # Huber Regression
       alpha: [0.0001, 0.001, 0.01]
       epsilon: [1.1, 1.35, 1.5]
-    rf:  # Random Forest
-      n_estimators: [300, 400]
-      max_depth: [30, 40]
-      min_samples_split: [5, 7]
-      min_samples_leaf: [1, 3]
-    et:  # Extra Trees
-      n_estimators: [300, 400]
-      max_depth: [30, 40]
-      min_samples_split: [5, 7]
-      min_samples_leaf: [1, 3]
-    gbr:  # Gradient Boosting Regressor
-      n_estimators: [300, 400]
-      learning_rate: [0.1, 0.2]
-      max_depth: [5, 7]
-      min_samples_split: [2]
-    lightgbm:  # LightGBM
-      num_leaves: [62, 127]
-      learning_rate: [0.1, 0.2]
-      n_estimators: [300, 400]
+    rf:
+      n_estimators: [200, 300, 500]     # 성능에 가장 큰 영향
+      max_depth: [20, 30, 40]         # 과적합 vs 성능 균형
+    et:
+      n_estimators: [200, 300, 500]     # 성능에 가장 큰 영향
+      max_depth: [20, 30, 40]         # 과적합 vs 성능 균형
+    gbr:
+      n_estimators: [200, 300, 500]     # 부스팅 라운드 수 (가장 중요)
+      learning_rate: [0.05, 0.1, 0.15]  # 학습률 (두 번째로 중요)
+      max_depth: [3, 5, 7]              # 트리 깊이 (세 번째로 중요)
+    lightgbm:
+      num_leaves: [31, 63, 127]         # 모델 복잡도 (가장 중요)
+      learning_rate: [0.05, 0.1, 0.15]  # 학습률 (두 번째로 중요)
+      n_estimators: [200, 300, 500]     # 부스팅 라운드 (세 번째로 중요)
 
+    # rf:
+    #   n_estimators: [200, 300, 500]     # 성능에 가장 큰 영향
+    #   max_depth: [20, 30, 40, null]         # 과적합 vs 성능 균형
 # ['svm', 'dt', 'lr', 'ridge', 'br', 'huber', 'rf', 'et', 'gbr', 'lightgbm', 'mlp'] ['rf', 'et', 'gbr', 'lightgbm'] xgboost, catboost, adaboost, bagging, stacking, blending, voting
 # lr lasso ridge en lar llar omp br ard par ransac tr huber kr svm knn dt rf et ada gbr mlp lightgbm dummy
 

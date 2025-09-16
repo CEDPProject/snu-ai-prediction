@@ -62,11 +62,11 @@ def training_dl(model, trainloader, validloader, criterion, optimizer, accelerat
         for epoch in range(epochs):
             for idx, item in enumerate(loader):
                 data_time_m.update(time.time() - end_time)
-                
-                inputs = item['inputs'].float()
+                # ID 제거 후 입력으로 사용
+                inputs = item['inputs'][:,:,1:].float()
                 targets = item['targets'].float()
-                outputs = current_model(inputs)
                 
+                outputs = current_model(inputs)
                 if clamping:
                     outputs = torch.clamp(outputs, min=0)
                 
@@ -198,10 +198,10 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             
             for idx, item in enumerate(loader):
                 data_time_m.update(time.time() - end_time)
-
-                inputs = item['inputs'].float()
+                
+                inputs = item['inputs'][:,:,1:].float()
                 targets = item['targets'].float()
-                    
+
                 outputs = current_model(inputs)
 
                 if clamping:
@@ -248,7 +248,8 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
         import pandas as pd
         from collections import defaultdict
 
-        # === 지역별 model_key별 누적 구조 생성 ===
+        # === PyCaret과 동일한 구조로 결과 저장 ===
+        # 지역별 model_key별 누적 구조 생성
         region_preds_by_model = defaultdict(lambda: defaultdict(list))
         region_trues_by_model = defaultdict(lambda: defaultdict(list))
 
@@ -257,20 +258,118 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             region_preds_by_model[model_key][region].append(outputs)
             region_trues_by_model[model_key][region].append(total_targets[(model_key, area_grp_id)])
 
+        # PyCaret과 동일한 형태의 결과 리스트들
+        results_list = []
+        area_level_metrics = []
+        metric_cols = ['NMAE', 'MAE', 'MSE', 'RMSE', 'MAPE', 'MSPE', 'RSE']
+
+        # 개별 모델 메트릭 계산 (PyCaret 스타일)
+        print(f"\nCalculating metrics for DL models...")
+        for model_key in region_preds_by_model:
+            for region in region_preds_by_model[model_key]:
+                num_areas = len(region_preds_by_model[model_key][region])
+                
+                if num_areas == 1:
+                    # 단일 area인 경우
+                    preds = region_preds_by_model[model_key][region][0]
+                    trues = region_trues_by_model[model_key][region][0]
+                    
+                    metrics = cal_metric(pred=preds, true=trues, region=region)
+                    results_list.append({
+                        'model_key': model_key,
+                        'model_name': model_key,  # DL에서는 model_key를 model_name으로 사용
+                        'model_type': 'dl_individual',
+                        'region': region,
+                        'num_areas': 1,
+                        'calculation_method': 'direct',
+                        **metrics
+                    })
+                else:
+                    # 다중 area인 경우
+                    area_metrics_list = []
+                    
+                    for i, (preds, trues) in enumerate(zip(
+                        region_preds_by_model[model_key][region],
+                        region_trues_by_model[model_key][region]
+                    )):
+                        area_metrics = cal_metric(pred=preds, true=trues, region=region)
+                        area_metrics_list.append(area_metrics)
+                        
+                        # 호기별 메트릭 저장
+                        area_level_metrics.append({
+                            'model_key': model_key,
+                            'model_name': model_key,
+                            'model_type': 'dl_individual',
+                            'region': region,
+                            'area_index': i,
+                            **area_metrics
+                        })
+                    
+                    # area별 메트릭 합산
+                    summed_metrics = {}
+                    for metric_name in metric_cols:
+                        if metric_name in area_metrics_list[0]:
+                            summed_metrics[metric_name] = sum(m[metric_name] for m in area_metrics_list)
+                    
+                    results_list.append({
+                        'model_key': model_key,
+                        'model_name': model_key,
+                        'model_type': 'dl_individual',
+                        'region': region,
+                        'num_areas': num_areas,
+                        'calculation_method': 'summed',
+                        **summed_metrics
+                    })
+                    
+                    print(f"DL model: {model_key}_{region} - Summed MAE: {summed_metrics.get('MAE', 0):.4f} (from {num_areas} areas)")
+
+                # results 딕셔너리에도 추가 (기존 로직 유지)
+                for k, v in metrics.items() if num_areas == 1 else summed_metrics.items():
+                    results[f'{model_key}_{region}_{k}'] = v
+
+        # === PyCaret과 동일한 CSV 파일들 저장 ===
+        
+        # 1. 호기별 메트릭 저장
+        if area_level_metrics:
+            area_metrics_df = pd.DataFrame(area_level_metrics)
+            area_metrics_df.to_csv(os.path.join(savedir, f"{name.lower()}_area_level_results.csv"), index=False)
+            _logger.info(f"💾 Saved {name.lower()}_area_level_results.csv")
+        
+        # 2. 전체 결과 저장
+        results_df = pd.DataFrame(results_list)
+        results_df.to_csv(os.path.join(savedir, f"{name.lower()}_all_results.csv"), index=False)
+        _logger.info(f"💾 Saved {name.lower()}_all_results.csv")
+
+        # 3. 사용 가능한 메트릭 컬럼 확인
+        available_metric_cols = [col for col in metric_cols if col in results_df.columns]
+
+        # 4. model_name과 region별 평균 계산
+        averaged_results = (
+            results_df
+            .groupby(['model_name', 'region'], as_index=False)
+            .agg({
+                **{col: 'mean' for col in available_metric_cols},
+                'model_key': lambda x: ','.join(sorted(x.unique())),
+                'model_type': 'first',
+                'num_areas': 'first',
+                'calculation_method': 'first'
+            })
+            .rename(columns={'model_key': 'model_keys'})
+        )
+
+        averaged_results.to_csv(os.path.join(savedir, f"{name.lower()}_region_level_results.csv"), index=False)
+        _logger.info(f"💾 Saved {name.lower()}_region_level_results.csv")
+
+        # === 기존 DL 전용 CSV도 유지 (호환성을 위해) ===
         region_model_metrics_list = []
         for model_key in region_preds_by_model:
             for region in region_preds_by_model[model_key]:
                 # 각 지역-모델 조합에서 시점별 합산
                 summed_pred = np.sum(region_preds_by_model[model_key][region], axis=0)
                 summed_true = np.sum(region_trues_by_model[model_key][region], axis=0)
-
-                # 지표 계산 (정격출력 10% 이상인 시점만 사용)
+                
+                # 지표 계산
                 region_metrics = cal_metric(pred=summed_pred, true=summed_true, region=region)
-
-                # 결과 저장
-                for k, v in region_metrics.items():
-                    results[f'{model_key}_{region}_{k}'] = v
-
                 region_model_metrics_list.append({
                     'model_key': model_key,
                     'region': region,
@@ -279,15 +378,15 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
 
                 _logger.info(f"📊 {name} Metrics for model {model_key} - region {region}: {region_metrics}")
 
-        # === DataFrame 저장 ===
+        # 기존 DL 방식 CSV 저장 (호환성)
         region_model_df = pd.DataFrame(region_model_metrics_list)
         region_model_df.to_csv(os.path.join(savedir, f"{name}_region_model_metrics.csv"), index=False)
 
-        # === 모델별 지역 평균 지표 계산 ===
-        metric_cols = ['MAE', 'MSE', 'RMSE', 'MAPE', 'MSPE', 'RSE', 'NMAE']
+        # 모델별 지역 평균 지표 계산
+        metric_cols_basic = ['MAE', 'MSE', 'RMSE', 'MAPE', 'MSPE', 'RSE', 'NMAE']
         region_avg_df = (
             region_model_df
-            .groupby('region', as_index=False)[metric_cols]
+            .groupby('region', as_index=False)[metric_cols_basic]
             .mean()
             .rename(columns=lambda x: f'avg_{x}' if x != 'region' else x)
         )
@@ -298,7 +397,7 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             for k in ['avg_MAE', 'avg_MSE', 'avg_RMSE', 'avg_MAPE', 'avg_MSPE', 'avg_RSE', 'avg_NMAE']:
                 results[f'{row["region"]}_{k}'] = row[k]
 
-    # (기존 개별 출력 로직은 유지 가능)
+    # (기존 개별 출력 로직은 유지)
     if return_individual_outputs:
         individual_metrics = {}
         for (model_key, area_grp_id), outputs in total_outputs.items():

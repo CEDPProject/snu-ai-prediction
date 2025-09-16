@@ -73,13 +73,16 @@ def main(cfg):
                                                 align_time               = cfg.DATASET.align_time,
                                                 target                   = cfg.DATASET.target,
                                                 model_name               = cfg.MODEL.modelname,
-                                                del_feature              = cfg.DATASET.ignore_feature
+                                                del_feature              = cfg.DATASET.ignore_feature,
+                                                split_date               = cfg.DATASET.split_date,
+                                                end_date                 = cfg.DATASET.end_date,
+                                                target_type              = cfg.DATASET.target_type
                                                 )
     
     # update cfg
     update_information(cfg       =  cfg, 
                         section  =  'MODELSETTING',
-                        dim_in   =  len(features),
+                        dim_in   =  len(features)-1,
                         seq_len  =  cfg.DATASET.seq_len,
                         pred_len =  cfg.DATASET.pred_len,
                         c_out    =  cfg.DATASET.c_out,
@@ -89,7 +92,7 @@ def main(cfg):
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         OmegaConf.save(cfg, os.path.join(savedir, 'configs.yaml'))
-        print(OmegaConf.to_yaml(cfg))
+        # print(OmegaConf.to_yaml(cfg))
 
     # wandb
     if cfg.TRAIN.wandb.use:
@@ -116,7 +119,7 @@ def main(cfg):
         # ML Model Training
         _logger.info('Training ML Model...')
         if cfg.MODEL.modelname == 'MLpycaret':
-            all_trained_models_dict, feature_names_dict = training_ml_pycaret(
+            all_trained_models, all_ensemble_models, feature_names_dict = training_ml_pycaret(
                                     trn_dataloader,
                                     selected_models         = cfg.MODELSETTING.selected_models,
                                     save_dir                = savedir,
@@ -127,20 +130,26 @@ def main(cfg):
                                     search_algorithm        = cfg.MODELSETTING.search_algorithm,
                                     early_stopping          = cfg.MODELSETTING.early_stopping,
                                     n_jobs                  = cfg.MODELSETTING.n_jobs,
-                                    grid_model              = cfg.MODELSETTING.model_grids,
+                                    model_grids             = cfg.MODELSETTING.model_grids,
                                     k_fold_num              = cfg.MODELSETTING.k_fold_num,
                                     category_name           = cfg.DATASET.category_name,
-                                    clamping                = cfg.TRAIN.clamping,
-                                    ignore_features_list    = cfg.DATASET.ignore_feature
+                                    ignore_features_list    = cfg.DATASET.ignore_feature,
+                                    enable_ensemble         = cfg.MODELSETTING.ensemble.enable,
+                                    ensemble_types          = cfg.MODELSETTING.ensemble.types,
                                     )
-            
-            test_metrics = test_ml_pycaret(all_trained_models_dict, 
-                                    tst_dataloader, 
-                                    feature_names_dict,
-                                    save_dir = savedir,
-                                    eval_merge_grp = True, 
-                                    clamping       = cfg.TRAIN.clamping,
-                                    category_name  = cfg.DATASET.category_name)
+
+            test_metrics = test_ml_pycaret(
+                                    all_trained_models   = all_trained_models,
+                                    all_ensemble_models  = all_ensemble_models,
+                                    tst_loader           = tst_dataloader, 
+                                    feature_names_dict   = feature_names_dict,
+                                    save_dir             = savedir,
+                                    eval_merge_grp       = True, 
+                                    clamping             = cfg.TRAIN.clamping,
+                                    category_name        = cfg.DATASET.category_name,
+                                    enable_ensemble      = cfg.MODELSETTING.ensemble.enable,
+                                    )
+    
             _logger.info('Pycaret done!')
             exit()
         else:

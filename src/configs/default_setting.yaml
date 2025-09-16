@@ -6,26 +6,31 @@ DEFAULT:
 DATASET:
   datadir: ../data
   scale: standard
-  split_rate: [0.8, 0.1, 0.1]
-  batch_size: 512
+  split_rate: [0.8, 0.0, 0.1]
+  split_date: 2023-01-01 00:00:00
+  end_date: 2023-12-31 23:00:00  
+  # end_date: 2023-12-31 23:00:00  
+  batch_size: 1
   num_workers: 0
-  shuffle: true
+  shuffle: false
   pin_memory: true
-  drop_last: true
+  drop_last: false
   category_name: wind
   data_version: version2_241107
   input_structure: independence
   individual_model: True
   align_time: False
-  lead_time_align: False
+  lead_time_align: True
   target: power
-  seq_len: 1
+  target_type: multi
+  seq_len: 12
   pred_len: 1
   c_out: 1
-  ignore_feature: ['SWDDIR', 'NWP_TP_CD']
+  ignore_feature: ['LEAD_TM', 'NWP_TP_CD']
+  # ['LEAD_TM', 'NWP_TP_CD']
 
 TRAIN:
-  epoch: 1
+  epoch: 30
   ckp_metric: loss
   eval_epochs: 1
   log_epochs: 1
@@ -37,7 +42,7 @@ TRAIN:
   fine_tuning_method: full
   grad_accum_steps: 1
   mixed_precision: 'no'
-  clamping: true
+  clamping: True
   wandb: 
     use: false
     wandb_iter: 500
