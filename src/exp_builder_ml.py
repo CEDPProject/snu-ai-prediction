@@ -6,7 +6,9 @@ from utils.utils import cal_metric
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from omegaconf import OmegaConf
 from sklearn.model_selection import ParameterGrid
-import os
+import logging
+
+logger = logging.getLogger('ML Models') 
 
 def clamp_predictions(predictions):
     return np.maximum(predictions, 0)
@@ -34,7 +36,7 @@ def training_ml(model_class, trn_loader, clamping, eval_merge_grp=False, categor
 
     for idx, (model_key, area_dict) in enumerate(trn_loader.items(), start=1):
         for area_grp_id, data_dict in area_dict.items():
-            print(f"Processing ({model_key}, {area_grp_id}) ({idx}/{len(trn_loader)})")
+            logger.info(f"Processing ({model_key}, {area_grp_id}) ({idx}/{len(trn_loader)})")
 
             # Extract train_x and train_y directly from data_dict
             train_x = data_dict['train_x'].drop(columns=["AREA_GRP_ID"], errors="ignore").values
@@ -44,7 +46,7 @@ def training_ml(model_class, trn_loader, clamping, eval_merge_grp=False, categor
             model_instance = model_class
             model_dict[(model_key, area_grp_id)] = model_instance
 
-            print(f"Fitting model for ({model_key}, {area_grp_id})")
+            logger.info(f"Fitting model for ({model_key}, {area_grp_id})")
             model_instance.fit(train_x, train_y)
 
             # Prediction and metric calculation
@@ -53,7 +55,7 @@ def training_ml(model_class, trn_loader, clamping, eval_merge_grp=False, categor
                 predictions = clamp_predictions(predictions)
 
             if eval_merge_grp:
-                print(f"Merging predictions for {area_grp_id}")
+                logger.info(f"Merging predictions for {area_grp_id}")
                 merged_predictions = merge_predictions(predictions, area_grp_id, eval_merge_grp, category_name)
                 metrics = cal_metric(pred=list(merged_predictions.values()), true=train_y)
             else:
@@ -82,7 +84,7 @@ def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_nam
 
     for idx, (model_key, area_dict) in enumerate(tst_loader.items(), start=1):
         for area_grp_id, data_dict in area_dict.items():
-            print(f"Testing ({model_key}, {area_grp_id}) ({idx}/{len(tst_loader)})")
+            logger.info(f"Testing ({model_key}, {area_grp_id}) ({idx}/{len(tst_loader)})")
 
             # Extract test_x and test_y directly from data_dict
             test_x = data_dict['test_x'].drop(columns=["AREA_GRP_ID"], errors="ignore").values
@@ -106,12 +108,12 @@ def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_nam
                 region = area_grp_id.split('_')[0] 
                 # Calculate metrics without merging
                 metrics = cal_metric(pred=predictions, true=test_y, region=region)
-                print(f"Metrics for ({model_key}, {area_grp_id}): {metrics}")
+                logger.info(f"Metrics for ({model_key}, {area_grp_id}): {metrics}")
                 results[(model_key, area_grp_id)] = metrics
 
     # Process grouped metrics if grouping is enabled
     if eval_merge_grp:
-        print("Calculating grouped metrics with merged predictions...")
+        logger.info("Calculating grouped metrics with merged predictions...")
         for group_key, pred_true_pairs in grouped_predictions.items():
             all_predictions = []
             all_truths = []
@@ -129,7 +131,7 @@ def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_nam
             region = group_key.split('_')[0] 
             # Calculate metrics for the merged group
             metrics = cal_metric(pred=merged_predictions[group_key], true=all_truths, region=region)
-            print(f"Metrics for group {group_key}: {metrics}")
+            logger.info(f"Metrics for group {group_key}: {metrics}")
             results[group_key] = metrics
 
     return results
@@ -166,7 +168,7 @@ def training_ml_pycaret(
 
     for idx, (model_key, area_dict) in enumerate(trn_loader.items(), start=1):
         for area_grp_id, data_dict in area_dict.items():
-            print(f"Processing ({model_key}, {area_grp_id}) ({idx}/{len(trn_loader)})")
+            logger.info(f"Processing ({model_key}, {area_grp_id}) ({idx}/{len(trn_loader)})")
             
             # 데이터 준비
             train_x = data_dict['train_x']
@@ -177,7 +179,7 @@ def training_ml_pycaret(
             feature_names_dict[(model_key, area_grp_id)] = train_x.columns.tolist()
 
             # PyCaret 설정
-            print(f"Setting up PyCaret for ({model_key}, {area_grp_id})...")
+            logger.info(f"Setting up PyCaret for ({model_key}, {area_grp_id})...")
             reg_setup = setup(
                 data=train_data,
                 target='QGEN',
@@ -202,14 +204,14 @@ def training_ml_pycaret(
             
             for model_name in model_list:
                 model_desc = available_models.loc[model_name]
-                print(f"Training model: {model_name} ({model_desc['Name']})")
+                logger.info(f"Training model: {model_name} ({model_desc['Name']})")
                 
                 trained_model = create_model(model_name, verbose=False)
                 params = None
                 
                 if enable_tuning:
                     if search_algorithm == 'grid':
-                        print(f"Performing Grid Search for {model_name}...")
+                        logger.info(f"Performing Grid Search for {model_name}...")
                         if model_name not in grid_model:
                             raise ValueError(f"No grid found for model: {model_name}")
                         custom_grid = grid_model[model_name]
@@ -231,10 +233,10 @@ def training_ml_pycaret(
                         best_score = float('inf') if optimize_metric in ['MSE', 'RMSE', 'MAE'] else float('-inf')
                         best_params = None
                         
-                        print(f"Testing {len(param_grid)} parameter combinations...")
+                        logger.info(f"Testing {len(param_grid)} parameter combinations...")
                         
                         for i, params in enumerate(param_grid, 1):
-                            print(f"[{i}/{len(param_grid)}] Testing parameters: {params}")
+                            logger.info(f"[{i}/{len(param_grid)}] Testing parameters: {params}")
                             pycaret_params = {key: [value] for key, value in params.items()}
                             
                             try:
@@ -257,19 +259,19 @@ def training_ml_pycaret(
                                     best_score = current_mae
                                     best_model = tuned_model
                                     best_params = params
-                                    print(f"  ✅ New best MAE: {best_score:.4f}")
+                                    logger.info(f"  ✅ New best MAE: {best_score:.4f}")
                                 else:
-                                    print(f"  📊 MAE: {current_mae:.4f}")
+                                    logger.info(f"  📊 MAE: {current_mae:.4f}")
                                     
                             except Exception as e:
-                                print(f"  ❌ Error with params {params}: {e}")
+                                logger.info(f"  ❌ Error with params {params}: {e}")
                                 continue
 
-                        print(f"\n🎯 Best parameters for {model_name}: {best_params}")
-                        print(f"🎯 Best MAE: {best_score:.4f}")
+                        logger.info(f"🎯 Best parameters for {model_name}: {best_params}")
+                        logger.info(f"🎯 Best MAE: {best_score:.4f}")
 
                     elif search_algorithm == 'random':
-                        print(f"Performing Random Search for {model_name}...")
+                        logger.info(f"Performing Random Search for {model_name}...")
                         tuned_model = tune_model(
                             trained_model,
                             custom_grid=grid_model.get(model_name, {}),
@@ -312,12 +314,12 @@ def training_ml_pycaret(
             
             # PyCaret 앙상블 모델 생성
             if enable_ensemble and len(base_models) >= 2:
-                print(f"\n🔧 Creating PyCaret ensemble models for ({model_key}, {area_grp_id})...")
+                logger.info(f"🔧 Creating PyCaret ensemble models for ({model_key}, {area_grp_id})...")
                 
                 # Blend Models
                 if 'blend' in ensemble_types:
                     try:
-                        print("Creating Blend ensemble...")
+                        logger.info("Creating Blend ensemble...")
                         blended_model = blend_models(estimator_list=base_models, fold=k_fold_num, verbose=False)
                         all_ensemble_models[(model_key, area_grp_id, 'pycaret_blend')] = blended_model
                         
@@ -330,14 +332,14 @@ def training_ml_pycaret(
                             'params': 'blend_default'
                         })
                         all_model_results.append(blend_results)
-                        print(f"  ✅ Blend ensemble MAE: {blend_results['MAE']:.4f}")
+                        logger.info(f"  ✅ Blend ensemble MAE: {blend_results['MAE']:.4f}")
                     except Exception as e:
-                        print(f"  ❌ Blend ensemble failed: {e}")
+                        logger.info(f"  ❌ Blend ensemble failed: {e}")
                 
                 # Stack Models
                 if 'stack' in ensemble_types:
                     try:
-                        print("Creating Stack ensemble...")
+                        logger.info("Creating Stack ensemble...")
                         meta_model = create_model('lr', verbose=False)
                         stacked_model = stack_models(
                             estimator_list=base_models,
@@ -357,14 +359,14 @@ def training_ml_pycaret(
                             'params': 'stack_with_lr'
                         })
                         all_model_results.append(stack_results)
-                        print(f"  ✅ Stack ensemble MAE: {stack_results['MAE']:.4f}")
+                        logger.info(f"  ✅ Stack ensemble MAE: {stack_results['MAE']:.4f}")
                     except Exception as e:
-                        print(f"  ❌ Stack ensemble failed: {e}")
+                        logger.info(f"  ❌ Stack ensemble failed: {e}")
                 
                 # Bagging
                 if 'bagging' in ensemble_types and len(base_models) > 0:
                     try:
-                        print("Creating Bagging ensemble...")
+                        logger.info("Creating Bagging ensemble...")
                         # 가장 좋은 성능의 모델 선택
                         best_base_model = base_models[0]
                         bagged_model = ensemble_model(best_base_model, method='Bagging', n_estimators=10, verbose=False)
@@ -379,9 +381,9 @@ def training_ml_pycaret(
                             'params': 'bagging_n10'
                         })
                         all_model_results.append(bag_results)
-                        print(f"  ✅ Bagging ensemble MAE: {bag_results['MAE']:.4f}")
+                        logger.info(f"  ✅ Bagging ensemble MAE: {bag_results['MAE']:.4f}")
                     except Exception as e:
-                        print(f"  ❌ Bagging ensemble failed: {e}")
+                        logger.info(f"  ❌ Bagging ensemble failed: {e}")
                 
     # 결과 저장
     if enable_tuning:
@@ -430,7 +432,7 @@ def test_ml_pycaret(
         pycaret_ensemble_trues = defaultdict(lambda: defaultdict(list))
 
     # STEP 1: 개별 모델 예측
-    print("Testing individual models...")
+    logger.info("Testing individual models...")
     for (m_key, a_grp_id, model_name, params), trained_model in all_trained_models.items():
         model_key = m_key
         region = a_grp_id.split('_')[0]
@@ -466,7 +468,7 @@ def test_ml_pycaret(
 
     # STEP 1.5: PyCaret 앙상블 모델 예측 (조건부 실행)
     if enable_ensemble and all_ensemble_models:
-        print("\nTesting PyCaret ensemble models...")
+        logger.info("Testing PyCaret ensemble models...")
         for (model_key, area_grp_id, ensemble_type), ensemble_model in all_ensemble_models.items():
             region = area_grp_id.split('_')[0]
             
@@ -497,7 +499,7 @@ def test_ml_pycaret(
     metric_cols = ['NMAE', 'MAE', 'MSE', 'RMSE', 'MAPE', 'MSPE', 'RSE']
 
     # 개별 모델 메트릭
-    print("\nCalculating metrics for individual models...")
+    logger.info("Calculating metrics for individual models...")
     for (model_key, model_name), region_dict in region_preds_by_model.items():
         for region in region_dict:
             num_areas = len(region_preds_by_model[(model_key, model_name)][region])
@@ -550,11 +552,11 @@ def test_ml_pycaret(
                     **summed_metrics
                 })
                 
-                print(f"Individual model: {model_key}_{model_name}_{region} - Summed MAE: {summed_metrics.get('MAE', 0):.4f} (from {num_areas} areas)")
+                logger.info(f"Individual model: {model_key}_{model_name}_{region} - Summed MAE: {summed_metrics.get('MAE', 0):.4f} (from {num_areas} areas)")
 
     # PyCaret 앙상블 메트릭 (조건부 실행)
     if enable_ensemble and all_ensemble_models:
-        print("\nCalculating metrics for PyCaret ensemble models...")
+        logger.info("Calculating metrics for PyCaret ensemble models...")
         for (model_key, ensemble_type), region_dict in pycaret_ensemble_preds.items():
             for region in region_dict:
                 num_areas = len(pycaret_ensemble_preds[(model_key, ensemble_type)][region])
@@ -607,7 +609,7 @@ def test_ml_pycaret(
                         **summed_metrics
                     })
                     
-                    print(f"PyCaret {ensemble_type}: {model_key}_{region} - Summed MAE: {summed_metrics.get('MAE', 0):.4f} (from {num_areas} areas)")
+                    logger.info(f"PyCaret {ensemble_type}: {model_key}_{region} - Summed MAE: {summed_metrics.get('MAE', 0):.4f} (from {num_areas} areas)")
 
     # STEP 3: 결과 저장 및 분석
     
@@ -680,8 +682,8 @@ def test_ml_pycaret(
             
     # 앙상블 사용 여부 로그
     if not enable_ensemble:
-        print("\n⚠️ Ensemble metrics were not calculated (enable_ensemble=False)")
+        logger.info("⚠️ Ensemble metrics were not calculated (enable_ensemble=False)")
     elif not all_ensemble_models:
-        print("\n⚠️ No ensemble models were provided")
+        logger.info("⚠️ No ensemble models were provided")
 
     return averaged_results

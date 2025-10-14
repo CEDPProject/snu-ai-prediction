@@ -10,8 +10,6 @@ from accelerate import Accelerator
 from utils.utils import cal_metric, Float32Encoder
 from utils.tools import EarlyStopping
 
-_logger = logging.getLogger('train')
-
 class AverageMeter:
     def __init__(self):
         self.reset()
@@ -33,11 +31,13 @@ def training_dl(model, trainloader, validloader, criterion, optimizer, accelerat
                 use_wandb: bool, ckp_metric: str, savedir: str, model_name: str, clamping: bool, 
                 pre_training: int, early_stopping_count: int, return_output: bool):
 
+    logger = logging.getLogger('TRAINING') 
+    
     early_stopping = EarlyStopping(patience=early_stopping_count)
     best_score = np.inf
 
     for (model_key, area_grp_id), loader in trainloader.items():
-        _logger.info(f"🔹 Training on {model_key} - {area_grp_id}")
+        logger.info(f"🔹 Training on {model_key} - {area_grp_id}")
 
         # 개별 모델인 경우 딕셔너리에서 선택, 단일 모델이면 동일 모델 사용
         if isinstance(model, dict):
@@ -92,7 +92,7 @@ def training_dl(model, trainloader, validloader, criterion, optimizer, accelerat
                     wandb.log(train_results, step=idx+1)
             
             if (epoch+1) % log_epochs == 0:
-                _logger.info('Epoch [{epoch}/{total_epoch}] TRAIN [{:>4d}/{}] Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
+                logger.info('Epoch [{epoch}/{total_epoch}] TRAIN [{:>4d}/{}] Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
                             'LR: {lr:.3e} '
                             'Time: {batch_time.val:.3f}s, {rate:>7.2f}/s ({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s) '
                             'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(
@@ -151,30 +151,32 @@ def training_dl(model, trainloader, validloader, criterion, optimizer, accelerat
                             json.dump(state, open(result_file, 'w'), indent='\t', cls=Float32Encoder)
                             torch.save(current_model.state_dict(), model_file)
                             if isinstance(model, dict):
-                                _logger.info(f"✅ Saved best model for {model_key} - {area_grp_id}")
+                                logger.info(f"✅ Saved best model for {model_key} - {area_grp_id}")
                             else:
-                                _logger.info("✅ Saved best model")
-                        _logger.info('Best {0} {1:6.6f} to {2:6.6f}'.format(ckp_metric.upper(), best_score, eval_metrics[ckp_metric]))
+                                logger.info("✅ Saved best model")
+                        logger.info('Best {0} {1:6.6f} to {2:6.6f}'.format(ckp_metric.upper(), best_score, eval_metrics[ckp_metric]))
 
                         best_score = eval_metrics[ckp_metric]
 
                     early_stopping(eval_metrics['loss'])
                     if early_stopping.early_stop:
-                        _logger.info("⏳ Early stopping triggered")
+                        logger.info("⏳ Early stopping triggered")
                         break
                 else:
-                    _logger.info(f"🚨 No validation data for {model_key} - {area_grp_id}, skipping validation.")
+                    logger.info(f"🚨 No validation data for {model_key} - {area_grp_id}, skipping validation.")
 
             end_time = time.time()
 
-    _logger.info("🎉 Training complete for all datasets")
+    logger.info("🎉 Training complete for all datasets")
 
 
 def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training: int, log_eval_iter: int, 
             savedir: str, model_name: str, clamping: bool, name: str = 'TEST', return_output: bool = True, return_avg: bool = True, 
             return_individual_outputs: bool = False):
     
-    _logger.info(f'\n[🔍 Start {name} Evaluation]')
+    logger = logging.getLogger(name) 
+    
+    logger.info(f'[🔍 Start {name} Evaluation]')
 
     batch_time_m = AverageMeter()
     data_time_m = AverageMeter()
@@ -188,7 +190,7 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
 
     with torch.no_grad():
         for (model_key, area_grp_id), loader in dataloader.items():
-            _logger.info(f"🧪 Testing on {model_key} - {area_grp_id}")
+            logger.info(f"🧪 Testing on {model_key} - {area_grp_id}")
             outputs_list, targets_list = [], []
             if isinstance(model, dict):
                 current_model = model[(model_key, area_grp_id)]
@@ -225,7 +227,7 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
                 batch_time_m.update(time.time() - end_time)
 
                 if (idx+1) % log_eval_iter == 0:
-                    _logger.info('{name} [{:>4d}/{}] Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
+                    logger.info('{name} [{:>4d}/{}] Loss: {loss.val:>6.4f} ({loss.avg:>6.4f}) '
                                 'Time: {batch_time.val:.3f}s, {rate:>7.2f}/s ({batch_time.avg:.3f}s, {rate_avg:>7.2f}/s) '
                                 'Data: {data_time.val:.3f} ({data_time.avg:.3f})'.format(
                                 (idx+1), 
@@ -248,8 +250,6 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
         import pandas as pd
         from collections import defaultdict
 
-        # === PyCaret과 동일한 구조로 결과 저장 ===
-        # 지역별 model_key별 누적 구조 생성
         region_preds_by_model = defaultdict(lambda: defaultdict(list))
         region_trues_by_model = defaultdict(lambda: defaultdict(list))
 
@@ -258,13 +258,12 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             region_preds_by_model[model_key][region].append(outputs)
             region_trues_by_model[model_key][region].append(total_targets[(model_key, area_grp_id)])
 
-        # PyCaret과 동일한 형태의 결과 리스트들
         results_list = []
         area_level_metrics = []
         metric_cols = ['NMAE', 'MAE', 'MSE', 'RMSE', 'MAPE', 'MSPE', 'RSE']
 
-        # 개별 모델 메트릭 계산 (PyCaret 스타일)
-        print(f"\nCalculating metrics for DL models...")
+        # 개별 모델 메트릭 계산
+        print(f"Calculating metrics for DL models...")
         for model_key in region_preds_by_model:
             for region in region_preds_by_model[model_key]:
                 num_areas = len(region_preds_by_model[model_key][region])
@@ -327,23 +326,21 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
                 for k, v in metrics.items() if num_areas == 1 else summed_metrics.items():
                     results[f'{model_key}_{region}_{k}'] = v
 
-        # === PyCaret과 동일한 CSV 파일들 저장 ===
-        
-        # 1. 호기별 메트릭 저장
+        # 호기별 메트릭 저장
         if area_level_metrics:
             area_metrics_df = pd.DataFrame(area_level_metrics)
             area_metrics_df.to_csv(os.path.join(savedir, f"{name.lower()}_area_level_results.csv"), index=False)
-            _logger.info(f"💾 Saved {name.lower()}_area_level_results.csv")
+            logger.info(f"💾 Saved {name.lower()}_area_level_results.csv")
         
-        # 2. 전체 결과 저장
+        # 전체 결과 저장
         results_df = pd.DataFrame(results_list)
         results_df.to_csv(os.path.join(savedir, f"{name.lower()}_all_results.csv"), index=False)
-        _logger.info(f"💾 Saved {name.lower()}_all_results.csv")
+        logger.info(f"💾 Saved {name.lower()}_all_results.csv")
 
-        # 3. 사용 가능한 메트릭 컬럼 확인
+        # 사용 가능한 메트릭 컬럼 확인
         available_metric_cols = [col for col in metric_cols if col in results_df.columns]
 
-        # 4. model_name과 region별 평균 계산
+        # model_name과 region별 평균 계산
         averaged_results = (
             results_df
             .groupby(['model_name', 'region'], as_index=False)
@@ -358,9 +355,8 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
         )
 
         averaged_results.to_csv(os.path.join(savedir, f"{name.lower()}_region_level_results.csv"), index=False)
-        _logger.info(f"💾 Saved {name.lower()}_region_level_results.csv")
+        logger.info(f"💾 Saved {name.lower()}_region_level_results.csv")
 
-        # === 기존 DL 전용 CSV도 유지 (호환성을 위해) ===
         region_model_metrics_list = []
         for model_key in region_preds_by_model:
             for region in region_preds_by_model[model_key]:
@@ -376,7 +372,7 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
                     **region_metrics
                 })
 
-                _logger.info(f"📊 {name} Metrics for model {model_key} - region {region}: {region_metrics}")
+                logger.info(f"📊 {name} Metrics for model {model_key} - region {region}: {region_metrics}")
 
         # 기존 DL 방식 CSV 저장 (호환성)
         region_model_df = pd.DataFrame(region_model_metrics_list)
@@ -406,7 +402,7 @@ def test_dl(model, dataloader, criterion, accelerator: Accelerator, pre_training
             for k, v in metrics.items():
                 results[f'{model_key}_{area_grp_id}_{k}'] = v
             individual_metrics[(model_key, area_grp_id)] = metrics
-        _logger.info(f"📊 Individual {name} Metrics: {individual_metrics}")
+        logger.info(f"📊 Individual {name} Metrics: {individual_metrics}")
 
     accelerator.wait_for_everyone()
     if accelerator.is_main_process and return_output:

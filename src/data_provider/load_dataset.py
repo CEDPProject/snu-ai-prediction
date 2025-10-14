@@ -44,8 +44,6 @@ def load_dataset(
             'location': pd.read_csv(os.path.join(base_path, "풍력발전단지_호기별_위치정보.csv"), encoding='cp949'),
             'ECMWF': pd.read_csv(os.path.join(base_path, "풍력발전단지_호기별_ECMWF_수치예보데이터.csv"), encoding='cp949'),
             'LDAPS': pd.read_csv(os.path.join(base_path, "풍력발전단지_호기별_LDAPS_수치예보데이터.csv"), encoding='cp949'),
-            # 'ECMWF': pd.read_csv(os.path.join(base_path, "풍력발전단지_ECMWF_수치예보데이터.csv")),
-            # 'LDAPS': pd.read_csv(os.path.join(base_path, "풍력발전단지_LDAPS_수치예보데이터.csv")),
         }
     
     # Ground Truth 설정

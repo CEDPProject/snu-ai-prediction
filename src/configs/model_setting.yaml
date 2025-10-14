@@ -45,8 +45,8 @@ NCART:
   mask_type: sparsemax
 
 TabM:
-  cat_cardinalities: []        # 범주형 변수의 cardinalities (예: [5, 10, 3] 등)
-  n_classes: null              # 분류 문제일 경우 클래스 수 (예: 2 또는 10), 회귀일 경우 null
+  cat_cardinalities: []        
+  n_classes: null              
   backbone:
     type: MLP
     n_blocks: 3
@@ -56,9 +56,9 @@ TabM:
   bins: null
   num_embeddings: null
   n_out: 1
-  arch_type: tabm              # TabM 모델 구조
-  k: 32                        # Adapters에서 top-k 선택 수 (핵심!)
-  share_training_batches: true # 학습 배치 공유 여부 (보통 True)
+  arch_type: tabm              
+  k: 32                        
+  share_training_batches: true 
 
 ############# ML Models #############
 

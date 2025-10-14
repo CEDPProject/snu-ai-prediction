@@ -14,7 +14,7 @@ from data_provider import create_dataloader
 from losses import create_criterion
 from optimizers import create_optimizer
 from models import create_model
-from utils.log import setup_default_logging
+from utils.log import setup_main_logging
 from utils.utils import version_build, load_resume_model, Float32Encoder
 from utils.tools import update_information
 from arguments import parser
@@ -23,13 +23,7 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
 
-# set logger
-_logger = get_logger('train')
-
 def main(cfg):
-    # set logger setting
-    setup_default_logging()
-    
     # set seed
     set_seed(cfg.DEFAULT.seed)
     
@@ -48,10 +42,17 @@ def main(cfg):
     loaddir, savedir = version_build(accelerator = accelerator,
                                     logdir = savedir, 
                                     resume = cfg.TRAIN.resume)
+
+    # logging
+    logger = setup_main_logging(
+        accelerator, 
+        savedir, 
+        debug=cfg.get('DEBUG', False)
+    )
     
     # set device
     if accelerator.is_local_main_process:
-        _logger.info('Device: {}'.format(accelerator.device))
+        logger.info('Device: {}'.format(accelerator.device))
     
     # load and define dataloader
     trn_dataloader, val_dataloader, tst_dataloader, features, scaler_dict = create_dataloader(
@@ -105,7 +106,10 @@ def main(cfg):
     
     criterion = create_criterion(loss_name=cfg.LOSS.loss_name)
     
-
+    ###################
+    # ML 모델 학습 및 평가
+    ###################
+    
     if 'ML' in cfg.MODEL.modelname:
         if cfg.MODEL.modelname != 'MLpycaret':
             # build Model
@@ -114,10 +118,10 @@ def main(cfg):
                 params       = cfg.MODELSETTING
                 )
             
-            _logger.info('Model name: {}'.format(cfg.MODEL.modelname))
+            logger.info('Model name: {}'.format(cfg.MODEL.modelname))
 
         # ML Model Training
-        _logger.info('Training ML Model...')
+        logger.info('Training ML Model...')
         if cfg.MODEL.modelname == 'MLpycaret':
             all_trained_models, all_ensemble_models, feature_names_dict = training_ml_pycaret(
                                     trn_dataloader,
@@ -150,7 +154,7 @@ def main(cfg):
                                     enable_ensemble      = cfg.MODELSETTING.ensemble.enable,
                                     )
     
-            _logger.info('Pycaret done!')
+            logger.info('Pycaret done!')
             exit()
         else:
             model_dict = training_ml(model, 
@@ -165,6 +169,11 @@ def main(cfg):
                                     clamping       = cfg.TRAIN.clamping,
                                     category_name  = cfg.DATASET.category_name)
     else:
+    
+        ###################
+        # DL 모델 학습 및 평가
+        ###################
+    
         # 모델 및 옵티마이저 생성 부분 (main 코드)
         if cfg.DATASET.individual_model:
             # 각 호기(데이터로더의 키)에 대해 개별 모델 생성
@@ -175,8 +184,8 @@ def main(cfg):
                     modelname=cfg.MODEL.modelname,
                     params=cfg.MODELSETTING
                 )
-                _logger.info(f"{key} for Model Name: {cfg.MODEL.modelname}")
-                _logger.info(f"# of learnable params for {key}: {np.sum([p.numel() if p.requires_grad else 0 for p in model_instance.parameters()])}")
+                logger.info(f"{key} for Model Name: {cfg.MODEL.modelname}")
+                logger.info(f"# of learnable params for {key}: {np.sum([p.numel() if p.requires_grad else 0 for p in model_instance.parameters()])}")
                 if cfg.TRAIN.resume is not None:
                     load_resume_model(
                         model=model_instance, 
@@ -201,7 +210,7 @@ def main(cfg):
                 modelname=cfg.MODEL.modelname,
                 params=cfg.MODELSETTING
             )
-            _logger.info('Model name: {}'.format(cfg.MODEL.modelname))
+            logger.info('Model name: {}'.format(cfg.MODEL.modelname))
             if cfg.TRAIN.resume is not None:
                 load_resume_model(
                     model=model, 
@@ -210,7 +219,7 @@ def main(cfg):
                     pre_training=cfg.TRAIN.pre_training,
                     fine_tuning_method=cfg.TRAIN.fine_tuning_method
                 )
-            _logger.info('# of learnable params: {}'.format(np.sum([p.numel() if p.requires_grad else 0 for p in model.parameters()])))
+            logger.info('# of learnable params: {}'.format(np.sum([p.numel() if p.requires_grad else 0 for p in model.parameters()])))
             optimizer = create_optimizer(
                 model=model, 
                 opt_name=cfg.OPTIMIZER.opt_name, 
@@ -228,7 +237,7 @@ def main(cfg):
             tst_dataloader[key] = accelerator.prepare(tst_dataloader[key])
 
         # DL 모델 학습 실행 (individual_model에 따라 분기)
-        _logger.info('Training DL Model...')
+        logger.info('Training DL Model...')
 
         if cfg.DATASET.individual_model:
             training_dl(
@@ -344,7 +353,7 @@ def main(cfg):
         accelerator.wait_for_everyone()
         if accelerator.is_main_process:
             test_metrics = {str(key): value for key, value in test_metrics.items()}
-            _logger.info('test_metrics: {}'.format(test_metrics))
+            logger.info('test_metrics: {}'.format(test_metrics))
             json.dump(test_metrics, open(os.path.join(savedir, 'test_results.json'),'w'), indent='\t', cls=Float32Encoder)
 
             # 모든 작업 완료 후 .pt 파일 삭제
