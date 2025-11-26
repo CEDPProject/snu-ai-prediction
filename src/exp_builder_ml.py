@@ -27,7 +27,7 @@ def merge_predictions(predictions, group_key, eval_merge_grp, category_name=None
     merged_results = {group: predictions}
     return {group: np.mean(merged_results[group], axis=0)}
 
-def training_ml(model_class, trn_loader, clamping, eval_merge_grp=False, category_name=None):
+def training_ml(model_class, trn_loader, clamping, eval_merge_grp=False, category_name=None, return_output=False):
     """
     Train machine learning models for each dataset combination in the training loader.
     """
@@ -65,7 +65,7 @@ def training_ml(model_class, trn_loader, clamping, eval_merge_grp=False, categor
 
     return model_dict
 
-def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_name=None):
+def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_name=None, return_output=False, savedir=None):
     """
     Test machine learning models for each dataset combination in the test loader.
     Supports grouped evaluation and prediction merging.
@@ -75,12 +75,18 @@ def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_nam
         tst_loader: Test data loader containing test_x and test_y.
         eval_merge_grp: Whether to merge predictions for grouped evaluation.
         category_name: Category name for specific merging logic.
+        return_output: If True, save predictions and targets as numpy files.
+        savedir: Directory to save outputs (required if return_output=True).
 
     Returns:
         results: Dictionary of calculated metrics for each group or merged group.
     """
     results = {}
     grouped_predictions = defaultdict(list)  # Store predictions and truths for grouped evaluation
+    
+    # For saving outputs
+    all_predictions = []
+    all_targets = []
 
     for idx, (model_key, area_dict) in enumerate(tst_loader.items(), start=1):
         for area_grp_id, data_dict in area_dict.items():
@@ -100,6 +106,11 @@ def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_nam
             if clamping:
                 predictions = clamp_predictions(predictions)
 
+            # Collect for output saving
+            if return_output:
+                all_predictions.append(predictions)
+                all_targets.append(test_y)
+
             if eval_merge_grp:
                 # Group key handling
                 group_key = area_grp_id.split('_')[0]  # Example: "8711_001" → "8711"
@@ -115,16 +126,16 @@ def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_nam
     if eval_merge_grp:
         logger.info("Calculating grouped metrics with merged predictions...")
         for group_key, pred_true_pairs in grouped_predictions.items():
-            all_predictions = []
+            all_predictions_group = []
             all_truths = []
 
             # Merge predictions and ground truths for the group
             for predictions, truths in pred_true_pairs:
-                all_predictions.extend(predictions)
+                all_predictions_group.extend(predictions)
                 all_truths.extend(truths)
 
             # Use merge_predictions to average results (if needed)
-            merged_predictions = merge_predictions(np.array(all_predictions), group_key, eval_merge_grp, category_name)
+            merged_predictions = merge_predictions(np.array(all_predictions_group), group_key, eval_merge_grp, category_name)
             if clamping:
                 merged_predictions = clamp_predictions(merged_predictions)
             all_truths = np.array(all_truths)
@@ -133,6 +144,19 @@ def test_ml(model_dict, tst_loader, clamping, eval_merge_grp=False, category_nam
             metrics = cal_metric(pred=merged_predictions[group_key], true=all_truths, region=region)
             logger.info(f"Metrics for group {group_key}: {metrics}")
             results[group_key] = metrics
+
+    # Save outputs if requested
+    if return_output:
+        if savedir is None:
+            raise ValueError("savedir must be provided when return_output=True")
+        
+        os.makedirs(savedir, exist_ok=True)
+        total_outputs = np.concatenate(all_predictions, axis=0)
+        total_targets = np.concatenate(all_targets, axis=0)
+        
+        np.save(os.path.join(savedir, 'TEST_total_outputs.npy'), total_outputs)
+        np.save(os.path.join(savedir, 'TEST_total_targets.npy'), total_targets)
+        logger.info(f"Saved predictions and targets to {savedir}")
 
     return results
 
@@ -153,7 +177,8 @@ def training_ml_pycaret(
     n_jobs=8,
     category_name='solar',
     enable_ensemble=True,  # PyCaret 앙상블 활성화
-    ensemble_types=['blend', 'stack', 'bagging']  # 사용할 PyCaret 앙상블
+    ensemble_types=['blend', 'stack', 'bagging'],  # 사용할 PyCaret 앙상블
+    return_output=False
 ):
     """
     Enhanced training function with both individual models and PyCaret ensemble methods
@@ -410,7 +435,8 @@ def test_ml_pycaret(
     eval_merge_grp=True,
     clamping=False,
     category_name='solar',
-    enable_ensemble=True  # 앙상블 메트릭 계산 여부
+    enable_ensemble=True,  # 앙상블 메트릭 계산 여부
+    return_output=False
 ):
     """
     Test function for individual models and optionally PyCaret ensemble models
@@ -430,6 +456,14 @@ def test_ml_pycaret(
     if enable_ensemble:
         pycaret_ensemble_preds = defaultdict(lambda: defaultdict(list))
         pycaret_ensemble_trues = defaultdict(lambda: defaultdict(list))
+
+    # For saving all predictions and targets
+    all_predictions_dict = {}  # key: (model_key, model_name), value: list of predictions
+    all_targets_dict = {}  # key: (model_key, model_name), value: list of targets
+    
+    if enable_ensemble:
+        ensemble_predictions_dict = {}  # key: (model_key, ensemble_type), value: list of predictions
+        ensemble_targets_dict = {}  # key: (model_key, ensemble_type), value: list of targets
 
     # STEP 1: 개별 모델 예측
     logger.info("Testing individual models...")
@@ -465,6 +499,15 @@ def test_ml_pycaret(
 
         region_preds_by_model[(model_key, model_name)][region].append(pred_values)
         region_trues_by_model[(model_key, model_name)][region].append(true_values)
+        
+        # Collect for output saving
+        if return_output:
+            key = (model_key, model_name)
+            if key not in all_predictions_dict:
+                all_predictions_dict[key] = []
+                all_targets_dict[key] = []
+            all_predictions_dict[key].append(pred_values)
+            all_targets_dict[key].append(true_values)
 
     # STEP 1.5: PyCaret 앙상블 모델 예측 (조건부 실행)
     if enable_ensemble and all_ensemble_models:
@@ -492,6 +535,15 @@ def test_ml_pycaret(
 
             pycaret_ensemble_preds[(model_key, ensemble_type)][region].append(pred_values)
             pycaret_ensemble_trues[(model_key, ensemble_type)][region].append(true_values)
+            
+            # Collect for output saving
+            if return_output:
+                key = (model_key, ensemble_type)
+                if key not in ensemble_predictions_dict:
+                    ensemble_predictions_dict[key] = []
+                    ensemble_targets_dict[key] = []
+                ensemble_predictions_dict[key].append(pred_values)
+                ensemble_targets_dict[key].append(true_values)
 
     # STEP 2: 메트릭 계산
     results = []
@@ -679,6 +731,33 @@ def test_ml_pycaret(
         if comparison_results:
             comparison_df = pd.DataFrame(comparison_results)
             comparison_df.to_csv(os.path.join(save_dir, "test_ensemble_comparison.csv"), index=False)
+    
+    # Save predictions and targets if requested
+    if return_output:
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # Save individual model predictions
+        logger.info("Saving individual model predictions and targets...")
+        for (model_key, model_name), pred_list in all_predictions_dict.items():
+            total_outputs = np.concatenate(pred_list, axis=0)
+            total_targets = np.concatenate(all_targets_dict[(model_key, model_name)], axis=0)
+            
+            model_filename = f"{model_key}_{model_name}"
+            np.save(os.path.join(save_dir, f'TEST_{model_filename}_total_outputs.npy'), total_outputs)
+            np.save(os.path.join(save_dir, f'TEST_{model_filename}_total_targets.npy'), total_targets)
+            logger.info(f"Saved {model_filename}: {len(total_outputs)} predictions")
+        
+        # Save ensemble predictions if available
+        if enable_ensemble and ensemble_predictions_dict:
+            logger.info("Saving ensemble model predictions and targets...")
+            for (model_key, ensemble_type), pred_list in ensemble_predictions_dict.items():
+                total_outputs = np.concatenate(pred_list, axis=0)
+                total_targets = np.concatenate(ensemble_targets_dict[(model_key, ensemble_type)], axis=0)
+                
+                ensemble_filename = f"{model_key}_{ensemble_type}"
+                np.save(os.path.join(save_dir, f'TEST_{ensemble_filename}_total_outputs.npy'), total_outputs)
+                np.save(os.path.join(save_dir, f'TEST_{ensemble_filename}_total_targets.npy'), total_targets)
+                logger.info(f"Saved {ensemble_filename}: {len(total_outputs)} predictions")
             
     # 앙상블 사용 여부 로그
     if not enable_ensemble:

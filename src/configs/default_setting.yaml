@@ -1,5 +1,5 @@
 DEFAULT:
-  exp_name: KETI_weather_prediction
+  exp_name: power_generation_prediction
   seed: 42
   del_pt: False
 
@@ -43,11 +43,12 @@ TRAIN:
   grad_accum_steps: 1
   mixed_precision: 'no'
   clamping: True
+  return_output: True
   wandb: 
     use: false
     wandb_iter: 500
     exp_name: default
-    project_name: 'KETI_weather_prediction'
+    project_name: 'power_generation_prediction'
     entity: null
 LOSS:
   loss_name: mse

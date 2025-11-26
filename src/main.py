@@ -140,6 +140,7 @@ def main(cfg):
                                     ignore_features_list    = cfg.DATASET.ignore_feature,
                                     enable_ensemble         = cfg.MODELSETTING.ensemble.enable,
                                     ensemble_types          = cfg.MODELSETTING.ensemble.types,
+                                    return_output           = False
                                     )
 
             test_metrics = test_ml_pycaret(
@@ -152,6 +153,7 @@ def main(cfg):
                                     clamping             = cfg.TRAIN.clamping,
                                     category_name        = cfg.DATASET.category_name,
                                     enable_ensemble      = cfg.MODELSETTING.ensemble.enable,
+                                    return_output        = cfg.TRAIN.return_output
                                     )
     
             logger.info('Pycaret done!')
@@ -161,13 +163,15 @@ def main(cfg):
                                     trn_dataloader,
                                     eval_merge_grp = True, 
                                     clamping       = cfg.TRAIN.clamping,
-                                    category_name  = cfg.DATASET.category_name)
+                                    category_name  = cfg.DATASET.category_name,
+                                    return_output  = False)
             
             test_metrics = test_ml(model_dict, 
                                     tst_dataloader, 
                                     eval_merge_grp = True, 
                                     clamping       = cfg.TRAIN.clamping,
-                                    category_name  = cfg.DATASET.category_name)
+                                    category_name  = cfg.DATASET.category_name,
+                                    return_output  = cfg.TRAIN.return_output)
     else:
     
         ###################
@@ -319,7 +323,7 @@ def main(cfg):
                 accelerator    = accelerator,
                 model_name     = cfg.MODEL.modelname,
                 clamping       = cfg.TRAIN.clamping,
-                return_output  = False
+                return_output  = cfg.TRAIN.return_output
             )
         else:
             val_metrics = test_dl(
@@ -347,7 +351,7 @@ def main(cfg):
                 accelerator    = accelerator,
                 model_name     = cfg.MODEL.modelname,
                 clamping       = cfg.TRAIN.clamping,
-                return_output  = False
+                return_output  = cfg.TRAIN.return_output
             )
 
         accelerator.wait_for_everyone()
