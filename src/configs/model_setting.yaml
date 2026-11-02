@@ -82,7 +82,7 @@ MLpycaret:
   n_jobs: 3
   k_fold_num: 5
   ensemble:
-    enable: True,  # PyCaret 앙상블 활성화
+    enable: True  # PyCaret 앙상블 활성화
     types: ['blend', 'stack', 'bagging']  # 사용할 PyCaret 앙상블
   model_grids:
     svm:  # Support Vector Machine

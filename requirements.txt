@@ -8,8 +8,8 @@ pandas==1.5.3
 pycaret==3.0.0
 reformer_pytorch==1.4.4
 rtdl_num_embeddings==0.0.12
-sklearn==1.2.2
+scikit-learn==1.2.2
 torch==2.1.0
 tqdm==4.65.0
 wandb==0.15.5
-yaml==6.0
+PyYAML==6.0

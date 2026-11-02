@@ -132,3 +132,36 @@ src/logs/
 src/checkpoints/
 src/results/
 src/saved_model/
+
+# data files / experiment outputs (never commit datasets or results)
+src/saved_data/
+src/version*/
+src/catboost_info/
+*.csv
+*.tsv
+*.npy
+*.npz
+*.parquet
+*.xlsx
+*.xls
+*.pkl
+*.pickle
+*.joblib
+*.pt
+*.pth
+*.ckpt
+wandb/
+
+# OS / editor
+.DS_Store
+.vscode/
+
+# coding-agent files (Claude Code, Codex, etc.)
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md
+NOTES.md
+.claude/
+.codex/
+.cursor/
+.aider*

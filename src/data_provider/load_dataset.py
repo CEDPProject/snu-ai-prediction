@@ -27,7 +27,7 @@ def load_dataset(
     
     # 태양광 발전량
     if category_name == 'solar':
-        base_path = os.path.join("../../data/ecobrain/", data_version, "태양광발전단지")
+        base_path = os.path.join(datadir, data_version, "태양광발전단지")
         data_dict = {
             'weather_forecast': pd.read_csv(os.path.join(base_path, "태양광발전단지_기상관측데이터.csv")),
             'real_power': pd.read_csv(os.path.join(base_path, "태양광발전단지_실적데이터.csv"), encoding='cp949'),
@@ -37,7 +37,7 @@ def load_dataset(
         }
 
     if category_name == 'wind':
-        base_path = os.path.join("../../data/ecobrain/", data_version, "풍력발전단지")
+        base_path = os.path.join(datadir, data_version, "풍력발전단지")
         data_dict = {
             'weather_forecast': pd.read_csv(os.path.join(base_path, "풍력발전단지_기상관측데이터.csv")),
             'real_power': pd.read_csv(os.path.join(base_path, "풍력발전단지_실적데이터.csv"), encoding='cp949'),
