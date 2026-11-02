@@ -22,7 +22,7 @@ class WeatherPredictionDataset(Dataset):
             pred_len (int): 예측할 타겟 길이 (Prediction Horizon)
         """
         # 데이터셋 저장 구조 초기화
-        self.datasets = {'ECMWF': {}, 'LDAPS': {}}
+        self.datasets = {'ECMWF': {}, 'LDAPS': {}} if input_structure == 'independence' else {'merged': {}}
         self.seq_len = seq_len
         self.pred_len = pred_len
         self.target_type = target_type
@@ -55,8 +55,9 @@ class WeatherPredictionDataset(Dataset):
                             current_dataset['valid_idxs'] = list(range(num_samples))
 
         elif input_structure == 'merge':
-            if 'merge' in data_dict:
-                for area_grp_id, entry in data_dict['merge'].items():
+            # load_dataset은 merge 결과를 'merged' 키에 저장한다.
+            if 'merged' in data_dict:
+                for area_grp_id, entry in data_dict['merged'].items():
                     area_grp_id = str(area_grp_id)
 
                     # 입력 데이터와 타깃 데이터 매칭
@@ -64,14 +65,14 @@ class WeatherPredictionDataset(Dataset):
                         inputs = entry[f"{type}_x"].copy()
                         targets = entry[f"{type}_y"].copy()
 
-                        if area_grp_id not in self.datasets['ECMWF']:
-                            self.datasets['ECMWF'][area_grp_id] = {
+                        if area_grp_id not in self.datasets['merged']:
+                            self.datasets['merged'][area_grp_id] = {
                                 'inputs': inputs,
                                 'targets': targets,
                                 'valid_idxs': []
                             }
 
-                        current_dataset = self.datasets['ECMWF'][area_grp_id]
+                        current_dataset = self.datasets['merged'][area_grp_id]
 
                         # Windowing을 고려한 valid_idxs 생성
                         num_samples = len(inputs) - self.seq_len - self.pred_len + 1

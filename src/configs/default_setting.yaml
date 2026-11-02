@@ -21,7 +21,7 @@ DATASET:
   individual_model: True
   align_time: False
   lead_time_align: True
-  target: power
+  target: power  # 실측 발전량(QGEN)만 지원
   target_type: multi
   seq_len: 12
   pred_len: 1

@@ -47,13 +47,10 @@ def load_dataset(
         }
     
     # Ground Truth 설정
-    if target == 'power':
-        ground_truth = data_dict['real_power'].drop(columns=['NAME'])
-    elif target == 'weather':
-        ground_truth = data_dict['weather_forecast'].drop(columns=['HGT'])
-    elif target == 'both':
-        ground_truth = pd.merge(data_dict['real_power'], data_dict['weather_forecast'], on='TM', how='inner')
-        ground_truth = ground_truth.drop(columns=['NAME', 'HGT'])
+    # 타깃은 실측 발전량(QGEN)만 지원한다. 학습·평가 코드가 ID별 QGEN 열을 전제로 한다.
+    if target != 'power':
+        raise ValueError(f"DATASET.target='{target}' is not supported; only 'power' (QGEN) is implemented")
+    ground_truth = data_dict['real_power'].drop(columns=['NAME'], errors='ignore')
 
     # 결측치 확인
     missing = ground_truth.isnull().sum()
@@ -99,7 +96,8 @@ def load_dataset(
                                     split_date      = split_date,
                                     end_date        = end_date,
                                     scale           = scale, 
-                                    pre_training    = pre_training)
+                                    pre_training    = pre_training,
+                                    lead_time_align = lead_time_align)
 
     if split_date is not None:
         print(f"\n📅 날짜 기준 데이터 분할 적용: {split_date}")
@@ -109,7 +107,7 @@ def load_dataset(
     else:
         print(f"\n📊 비율 기준 데이터 분할 적용: {split_rate}")
     
-    for key in ['ECMWF', 'LDAPS']:
+    for key in ['ECMWF', 'LDAPS', 'merged']:
         if key in data_dict:
             print(f"\n{key} 발전단지 호기 수: {len(data_dict[key])}")
             
@@ -176,6 +174,7 @@ def split_processing(data_dict,
                      pre_training=False, 
                      split_date=None,
                      end_date=None,
+                     lead_time_align=False,
                      random_state=42):
     
     scaler_map = {
@@ -307,10 +306,16 @@ def split_processing(data_dict,
 
     elif input_structure == 'merge':
         result_dict['merged'] = {}
-        merged_list = zip(data_dict['ECMWF'], data_dict['LDAPS'])
-        
+        ldaps_by_id = {df['AREA_GRP_ID'].iloc[0]: df for df in data_dict['LDAPS'] if len(df) > 0}
+        merged_list = [(df, ldaps_by_id[df['AREA_GRP_ID'].iloc[0]])
+                       for df in data_dict['ECMWF'] if len(df) > 0 and df['AREA_GRP_ID'].iloc[0] in ldaps_by_id]
+
         for ecmwf_df, ldaps_df in merged_list:
-            merged_df = pd.merge(ecmwf_df, ldaps_df, on=['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'], suffixes=('_ecmwf', '_ldaps'))
+            if lead_time_align:
+                # 예보원마다 FCST_TM당 최신 예보 1행이므로 발표 시각(CRTN_TM)이 달라도 FCST_TM으로 결합한다.
+                merged_df = pd.merge(ecmwf_df, ldaps_df.drop(columns=['CRTN_TM']), on=['AREA_GRP_ID', 'FCST_TM'], suffixes=('_ecmwf', '_ldaps'))
+            else:
+                merged_df = pd.merge(ecmwf_df, ldaps_df, on=['AREA_GRP_ID', 'CRTN_TM', 'FCST_TM'], suffixes=('_ecmwf', '_ldaps'))
             
             area_grp_ids = merged_df['AREA_GRP_ID'].unique()
             
@@ -340,7 +345,7 @@ def split_processing(data_dict,
                         # split_date 기준으로 분할
                         split_datetime = pd.to_datetime(split_date)
                         if end_date is None:
-                            end_split_datetime = df['FCST_TM'].max()   # 'date' 컬럼 이름에 맞게 수정
+                            end_split_datetime = pd.to_datetime(merged_df['FCST_TM']).max()
                         else:
                             end_split_datetime = pd.to_datetime(end_date)
                     

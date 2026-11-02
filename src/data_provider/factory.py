@@ -36,10 +36,12 @@ def create_dataloader(
     assert scale in (None, 'minmax', 'minmax_square', 'standard')
     assert category_name in ('solar', 'wind')
     assert input_structure in ('independence', 'merge')
+    assert target == 'power', f"DATASET.target='{target}' is not supported; only 'power' (QGEN) is implemented"
 
     data_dict, features, scaler_dict = load_dataset(
                             datadir                = datadir,
                             category_name          = category_name,
+                            target                 = target,
                             scale                  = scale,
                             input_structure        = input_structure,
                             pre_training           = pre_training,

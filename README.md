@@ -117,13 +117,14 @@ pip install -r requirements.txt
 | 설정 (`DATASET.*`) | 기본값 | 설명 |
 |---|---|---|
 | `category_name` | `wind` | `solar` 또는 `wind` |
-| `input_structure` | `independence` | 예보원별로 따로 학습. `merge`는 두 예보원을 열 방향으로 합침(현재 실험적) |
+| `input_structure` | `independence` | `independence`: 예보원별로 따로 학습. `merge`: 같은 발전소·예보 대상 시각(`FCST_TM`)의 두 예보원 변수를 열 방향으로 합쳐(`*_ecmwf`, `*_ldaps`) 모델 하나로 학습. 결과 키는 `merged` |
 | `individual_model` | `True` | `(예보원, 발전소)`마다 별도 모델 |
+| `target` | `power` | 예측 대상. 현재 실측 발전량(`QGEN`)만 지원하며 다른 값은 오류 |
 | `scale` | `standard` | 입력만 학습 구간 기준으로 스케일링(`standard`, `minmax`, `minmax_square`). 타깃은 원 단위 유지 |
 | `split_date` | `2023-01-01 00:00:00` | 이 시각 이전은 학습(+검증), 이후 `end_date`까지는 시험 |
 | `split_rate` | `[0.8, 0.0, 0.1]` | 학습·검증·시험 비율. 검증 비율이 0이면 검증 없음. `split_date`가 없으면 이 비율로 시간 순 분할 |
 | `seq_len` | `12` | **입력 윈도 길이(시간)**. 예측 시점 수가 아님 |
-| `target_type` | `multi` | `multi`: 윈도 각 시각의 발전량을 동시에 예측. `uni`: 윈도 다음 한 시각만 예측 |
+| `target_type` | `multi` | `multi`: 윈도 각 시각의 발전량을 동시에 예측(이때 `pred_len`을 `seq_len`과 같게 설정). `uni`: 윈도 다음 한 시각만 예측 |
 | `ignore_feature` | `['LEAD_TM', 'NWP_TP_CD']` | 입력에서 뺄 컬럼 |
 
 - 예측값은 `TRAIN.clamping: True`일 때 0 이상으로 자릅니다(발전량은 음수가 없음).
