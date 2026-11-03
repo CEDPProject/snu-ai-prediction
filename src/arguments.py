@@ -3,7 +3,7 @@ import yaml
 from omegaconf import OmegaConf
 
 def parser():
-    parser = argparse.ArgumentParser(description='koreabank')
+    parser = argparse.ArgumentParser(description='snu-ai-prediction')
     parser.add_argument('--model_name', type=str, help='model name for experiments')
     parser.add_argument('--default_cfg', type=str, help='configuration for default setting')
     parser.add_argument('--model_cfg', type=str, help='configuration for model')
